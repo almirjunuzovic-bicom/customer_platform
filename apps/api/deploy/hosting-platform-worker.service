@@ -1,0 +1,23 @@
+[Unit]
+Description=Hosting Platform - SERVERware sync worker
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=almir
+WorkingDirectory=/opt/hosting-platform/apps/api
+EnvironmentFile=/opt/hosting-platform/apps/api/.env
+ExecStart=/usr/bin/node dist/worker.js
+Restart=on-failure
+RestartSec=5
+# Avoid unbounded restart loops on a persistent misconfiguration
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Minor hardening - no reason this process needs broader access
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
