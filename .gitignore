@@ -1,0 +1,33 @@
+# Secrets - never commit
+*.env
+.env
+.env.*
+!.env.example
+api_key*.txt
+*_password.txt
+*.pem
+*.key
+id_rsa*
+!id_rsa*.pub
+
+# Reference documents (team lead docs, not code) - kept locally, not tracked
+*.docx
+*.docx.pdf
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.turbo/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor/OS
+.vscode/
+.idea/
+.DS_Store
