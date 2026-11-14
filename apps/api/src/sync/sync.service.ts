@@ -25,7 +25,7 @@ export class SyncService {
 
   constructor(
     @Inject(DATABASE) private readonly db: Database,
-    private readonly serverware: ServerwareService,
+    @Inject(ServerwareService) private readonly serverware: ServerwareService,
   ) {}
 
   async syncAllClusters(): Promise<SyncResult[]> {
