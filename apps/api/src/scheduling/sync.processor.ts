@@ -19,7 +19,15 @@ export class SyncProcessor extends WorkerHost {
 
   async process(job: Job<SyncJobData>): Promise<SyncResult> {
     const result = await this.syncService.syncCluster(job.data.clusterKey);
-    if (!result.ok) {
+    if (result.ok) {
+      // One line per tick so `journalctl -f` shows live activity, not just
+      // silence punctuated by failures. Negligible cost either way (see
+      // feedback_latest_versions-style benchmark in hst2171-architecture:
+      // ~3us CPU/call, journald already capped at 100M on the VM).
+      this.logger.log(
+        `"${result.clusterKey}" synced: ${result.hostsCount} hosts, ${result.vpsesCount} vpses, ${result.partitionsCount} partitions`,
+      );
+    } else {
       // Logged, not thrown: a down cluster is expected/handled behavior
       // (see ServerwareUnavailableError), not a job failure to retry
       // aggressively - the next repeatable tick will try again anyway.
