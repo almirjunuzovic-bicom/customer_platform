@@ -109,6 +109,11 @@ export const vpsInventory = mysqlTable(
     partitionId: int("partition_id").references(() => partitions.id),
     name: varchar("name", { length: 128 }).notNull(),
     engine: varchar("engine", { length: 16 }), // kvm | lxc
+    // Cache of the most recent state seen, kept in lockstep with every poll.
+    // Lets the dashboard read current status without touching the (much
+    // bigger) history table, and lets the poller detect transitions without
+    // an extra query. Source of truth for history remains vps_metrics_history.
+    lastKnownState: varchar("last_known_state", { length: 32 }),
     pbxwareVersion: varchar("pbxware_version", { length: 32 }),
     memLimit: int("mem_limit"),
     cpuLimit: int("cpu_limit"),

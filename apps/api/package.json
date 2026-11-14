@@ -6,7 +6,8 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "validate:serverware": "tsx src/serverware/validate-live.manual.ts"
+    "validate:serverware": "tsx src/serverware/validate-live.manual.ts",
+    "validate:sync": "tsx src/sync/validate-live.manual.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.4",
