@@ -33,8 +33,14 @@ export class ServerwareService {
   private readonly logger = new Logger(ServerwareService.name);
   private readonly clusters: Map<string, ServerwareClusterConfig>;
 
-  constructor(clusters: ServerwareClusterConfig[] = loadClusterConfigs()) {
-    this.clusters = new Map(clusters.map((c) => [c.key, c]));
+  // No constructor parameter on purpose: NestJS's DI tries to inject every
+  // constructor parameter it finds, default value or not. A TS array type
+  // erases to the bare `Array` constructor in reflected metadata, which
+  // Nest then tries (and fails) to resolve as a provider token. Tests that
+  // need custom cluster configs should construct the Map directly instead
+  // of going through `new ServerwareService(...)`.
+  constructor() {
+    this.clusters = new Map(loadClusterConfigs().map((c) => [c.key, c]));
   }
 
   listClusterKeys(): string[] {
