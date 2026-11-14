@@ -96,6 +96,9 @@ export interface ServerwarePartitionRaw {
   uuid: string;
   name: string;
   company: string;
+  // Seen as a genuine URL, a literal "url" placeholder, or absent entirely
+  // on different partitions - not reliable, see hst2171-serverware-api.
+  crm_link?: string;
   vps_quota: number;
   vps_usage: number;
 }
@@ -105,6 +108,7 @@ export interface ServerwarePartition {
   uuid: string;
   name: string;
   company: string;
+  crmLink?: string;
   vpsQuota: number;
   vpsUsage: number;
 }
@@ -157,6 +161,7 @@ export function mapPartition(raw: ServerwarePartitionRaw): ServerwarePartition {
     uuid: raw.uuid,
     name: raw.name,
     company: raw.company,
+    crmLink: raw.crm_link,
     vpsQuota: raw.vps_quota,
     vpsUsage: raw.vps_usage,
   };

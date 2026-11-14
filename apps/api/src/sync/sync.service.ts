@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { eq } from "drizzle-orm";
+import { parseCustomerId } from "../common/customer-id";
 import { DATABASE, type Database } from "../db/database.module";
 import {
   clusters,
@@ -160,6 +161,7 @@ export class SyncService {
     now: Date,
   ): Promise<void> {
     for (const p of swPartitions) {
+      const customerId = parseCustomerId(p.company);
       await this.db
         .insert(partitions)
         .values({
@@ -167,6 +169,8 @@ export class SyncService {
           serverwarePartitionId: p.serverwarePartitionId,
           name: p.name,
           company: p.company,
+          crmLink: p.crmLink,
+          customerId,
           vpsQuota: p.vpsQuota,
           vpsUsage: p.vpsUsage,
           lastSyncedAt: now,
@@ -175,6 +179,8 @@ export class SyncService {
           set: {
             name: p.name,
             company: p.company,
+            crmLink: p.crmLink,
+            customerId,
             vpsQuota: p.vpsQuota,
             vpsUsage: p.vpsUsage,
             lastSyncedAt: now,

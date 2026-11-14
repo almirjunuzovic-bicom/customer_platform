@@ -80,6 +80,16 @@ export const partitions = mysqlTable(
     serverwarePartitionId: int("serverware_partition_id").notNull(),
     name: varchar("name", { length: 128 }).notNull(),
     company: varchar("company", { length: 256 }),
+    // Not a real link in practice - seen as a genuine URL, a literal "url"
+    // placeholder, or absent entirely (see hst2171-serverware-api). Stored
+    // for reference only, never relied on as the sole source of customerId.
+    crmLink: varchar("crm_link", { length: 512 }),
+    // Parsed from the numeric suffix on `company` (Bicom-internal customer
+    // ID convention, not a SERVERware field - e.g. "Delta365 Ltd-99999" ->
+    // 99999). NULL when no suffix is present (e.g. pure test partitions).
+    // Suggested cross-cluster partner key, not an auto-trusted one - see
+    // hst2171-architecture open question #1 (Pending Review principle).
+    customerId: varchar("customer_id", { length: 32 }),
     vpsQuota: int("vps_quota"),
     vpsUsage: int("vps_usage"),
     lastSyncedAt: timestamp("last_synced_at").notNull(),
@@ -88,6 +98,7 @@ export const partitions = mysqlTable(
     clusterPartitionUnique: uniqueIndex(
       "partitions_cluster_serverware_id_uq",
     ).on(t.clusterId, t.serverwarePartitionId),
+    customerIdIdx: index("partitions_customer_id_idx").on(t.customerId),
   }),
 );
 
