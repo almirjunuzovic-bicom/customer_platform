@@ -1,0 +1,21 @@
+[Unit]
+Description=Hosting Platform - read-only API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=almir
+WorkingDirectory=/opt/hosting-platform/apps/api
+EnvironmentFile=/opt/hosting-platform/apps/api/.env
+ExecStart=/usr/bin/node dist/api.js
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
