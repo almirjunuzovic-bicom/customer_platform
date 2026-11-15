@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
-import { Maximize2 } from "lucide-react";
 import {
   CartesianGrid,
   Line,
@@ -70,14 +69,12 @@ function MetricChart({
   return (
     <div>
       {/* Single series - no legend box needed, the title already names it. */}
-      <button
-        type="button"
-        onClick={onExpand}
-        className="mb-2 flex items-center gap-1.5 text-sm font-medium hover:text-foreground/80"
-      >
-        {title}
-        <Maximize2 className="size-3.5 text-muted-foreground" />
-      </button>
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-sm font-medium">{title}</p>
+        <Button variant="outline" size="sm" onClick={onExpand}>
+          Details
+        </Button>
+      </div>
       <ResponsiveContainer width="100%" height={240}>
         <LineChart data={data} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -158,6 +155,27 @@ function presetToRange(
   return { from: new Date(Date.now() - hours * 3600_000).toISOString() };
 }
 
+const MAX_CHART_POINTS = 300;
+
+/**
+ * Stride-sample down to at most maxPoints - at 10s resolution even a single
+ * day is 8640 rows, which made both the overview charts and the dialog
+ * visibly lag (Recharts rendering that many SVG points blocks the main
+ * thread). Stats (peak/avg/min/current) are computed from the full
+ * un-sampled array elsewhere, this is for the chart line only - a missed
+ * single-tick spike in the drawn line is an acceptable tradeoff for a
+ * responsive UI, the stat tiles stay exact regardless of sampling.
+ */
+function downsample<T>(points: T[], maxPoints = MAX_CHART_POINTS): T[] {
+  if (points.length <= maxPoints) return points;
+  const step = points.length / maxPoints;
+  const result: T[] = [];
+  for (let i = 0; i < maxPoints; i++) {
+    result.push(points[Math.floor(i * step)]);
+  }
+  return result;
+}
+
 function computeStats(points: VpsMetricPoint[], field: "cpuUsage" | "memUsage" | "diskUsage") {
   const values = points.map((p) => p[field]).filter((v): v is number => v != null);
   if (values.length === 0) return null;
@@ -208,7 +226,7 @@ function MetricDetailDialog({
   const points = query.data ?? [];
   const stats = config ? computeStats(points, config.field) : null;
   const chartData = config
-    ? points.map((p) => ({
+    ? downsample(points).map((p) => ({
         time: new Date(p.capturedAt).toLocaleString([], {
           month: "short",
           day: "numeric",
@@ -333,9 +351,17 @@ export function VpsDetail() {
     queryFn: () => api.vpsGet(id),
     refetchInterval: 10_000,
   });
+  // Fixed at mount, not recomputed every render - a 24h-ago cutoff from
+  // when the page was opened is fine, and a stable value keeps the query
+  // key (and thus the cache) stable across re-renders.
+  const overviewFrom = useMemo(() => new Date(Date.now() - 24 * 3600_000).toISOString(), []);
   const historyQuery = useQuery({
-    queryKey: ["vps", id, "history"],
-    queryFn: () => api.vpsHistory(id),
+    queryKey: ["vps", id, "history", "24h"],
+    // Unbounded history (no from/to) made this page visibly lag - at 10s
+    // resolution it's 8640+ rows per day and growing, Recharts chokes on
+    // that many points. Last 24h is enough for a "how's it doing" glance;
+    // the per-metric Details dialog is where a longer range belongs.
+    queryFn: () => api.vpsHistory(id, { from: overviewFrom }),
     refetchInterval: 10_000,
   });
   const eventsQuery = useQuery({
@@ -368,7 +394,7 @@ export function VpsDetail() {
   const partition = partitionsQuery.data?.find((p) => p.id === vps.partitionId);
   const source = sourcesQuery.data?.find((s) => s.id === vps.sourceId);
   const history = historyQuery.data ?? [];
-  const chartData = history.map((point) => ({
+  const chartData = downsample(history).map((point) => ({
     time: new Date(point.capturedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     "CPU %": point.cpuUsage,
     "Memory %": point.memUsage,
