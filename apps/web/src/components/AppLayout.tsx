@@ -31,7 +31,7 @@ export function AppLayout() {
         </div>
         <div className="flex gap-2">
           <NavLink to="/">Topology</NavLink>
-          <NavLink to="/vps">VPS</NavLink>
+          <NavLink to="/vps">All VPSes</NavLink>
           <NavLink to="/sources">Sources</NavLink>
         </div>
         <Outlet />

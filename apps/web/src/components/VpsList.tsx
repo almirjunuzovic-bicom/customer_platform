@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { api, UnauthorizedError, type VpsInventory } from "@/lib/api";
+import { api, UnauthorizedError, type Source, type VpsInventory } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +17,15 @@ import {
 import { StateBadge } from "@/components/StateBadge";
 import { VpsActions } from "@/components/VpsActions";
 
-function VpsRow({ vps }: { vps: VpsInventory }) {
+function VpsRow({
+  vps,
+  source,
+  showSource,
+}: {
+  vps: VpsInventory;
+  source: Source | undefined;
+  showSource: boolean;
+}) {
   return (
     <TableRow>
       <TableCell className="font-medium">
@@ -29,6 +37,17 @@ function VpsRow({ vps }: { vps: VpsInventory }) {
           {vps.name}
         </Link>
       </TableCell>
+      {showSource && (
+        <TableCell>
+          <Link
+            to="/sources/$sourceId"
+            params={{ sourceId: String(vps.sourceId) }}
+            className="hover:underline"
+          >
+            {source?.name ?? `#${vps.sourceId}`}
+          </Link>
+        </TableCell>
+      )}
       <TableCell>
         <StateBadge state={vps.lastKnownState} task={vps.task} />
       </TableCell>
@@ -55,14 +74,23 @@ function VpsRow({ vps }: { vps: VpsInventory }) {
   );
 }
 
-export function VpsList({ sourceId, title = "VPS Instances" }: { sourceId?: number; title?: string }) {
+export function VpsList({ sourceId, title = "All VPSes" }: { sourceId?: number; title?: string }) {
   const { logout } = useAuth();
+  // Only fetched/shown when the list isn't already scoped to one source -
+  // every row would repeat the same value otherwise.
+  const showSource = sourceId == null;
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["vps", sourceId ?? "all"],
     queryFn: () => api.vpsList(sourceId != null ? { sourceId } : undefined),
     refetchInterval: 10_000, // matches the poller's own tick, see hst2171-architecture
     retry: (failureCount, err) => !(err instanceof UnauthorizedError) && failureCount < 3,
   });
+  const sourcesQuery = useQuery({
+    queryKey: ["sources"],
+    queryFn: api.sources,
+    enabled: showSource,
+  });
+  const sourcesById = new Map((sourcesQuery.data ?? []).map((s) => [s.id, s]));
 
   useEffect(() => {
     if (error instanceof UnauthorizedError) logout();
@@ -91,6 +119,7 @@ export function VpsList({ sourceId, title = "VPS Instances" }: { sourceId?: numb
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
+                {showSource && <TableHead>Source</TableHead>}
                 <TableHead>State</TableHead>
                 <TableHead>Engine</TableHead>
                 <TableHead>Platform</TableHead>
@@ -102,7 +131,12 @@ export function VpsList({ sourceId, title = "VPS Instances" }: { sourceId?: numb
             </TableHeader>
             <TableBody>
               {data.map((vps) => (
-                <VpsRow key={vps.id} vps={vps} />
+                <VpsRow
+                  key={vps.id}
+                  vps={vps}
+                  source={sourcesById.get(vps.sourceId)}
+                  showSource={showSource}
+                />
               ))}
             </TableBody>
           </Table>
