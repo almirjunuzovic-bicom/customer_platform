@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type VpsAction } from "@/lib/api";
 import {
@@ -30,6 +31,7 @@ function ActionButton({
   action: VpsAction;
   variant: "default" | "destructive" | "outline";
 }) {
+  const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: () => api.vpsAction(vpsId, action),
@@ -37,11 +39,23 @@ function ActionButton({
     // that the VPS changed state yet - refetching now mostly just clears
     // the "pending" UI. The real state update lands within the next
     // refetchInterval tick (<=10s) once the poller confirms it.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["vps"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["vps"] });
+      setOpen(false);
+    },
   });
 
   return (
-    <AlertDialog>
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        // Don't let a click-away/escape close it mid-request and lose the
+        // only place the error message is shown.
+        if (mutation.isPending) return;
+        if (next) mutation.reset(); // clear a stale error from last time
+        setOpen(next);
+      }}
+    >
       <AlertDialogTrigger
         render={
           <Button size="sm" variant={variant} disabled={mutation.isPending}>
