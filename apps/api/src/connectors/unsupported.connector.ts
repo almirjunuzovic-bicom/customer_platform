@@ -4,6 +4,7 @@ import type {
   ResolvedSource,
   SourceConnector,
   SourceHost,
+  SourceOverview,
   SourcePartition,
   SourceVps,
 } from "./connector.types";
@@ -45,6 +46,10 @@ export class UnsupportedConnector implements SourceConnector {
   }
 
   async getCallStats(source: ResolvedSource): Promise<CallStats> {
+    throw this.notImplemented(source);
+  }
+
+  async getOverview(source: ResolvedSource): Promise<SourceOverview> {
     throw this.notImplemented(source);
   }
 

@@ -61,6 +61,31 @@ export interface CallStats {
   currentMonth: number;
 }
 
+/**
+ * Network/cluster-wide "how's it doing" summary - confirmed live against
+ * lon1 (see hst2171-serverware-api): matches our own SUM(hosts.mem_total)/
+ * SUM(vps_inventory.mem_limit) exactly, so these ARE genuine aggregates,
+ * not one host's own numbers (unlike the dashboard payload's nested `rtm`
+ * sub-object, which turned out to just mirror the controller host's own
+ * live stats - deliberately NOT exposed here for that reason). Units
+ * normalized to GB here - SERVERware's own raw payload mixes KB (host
+ * totals) and MB (VPS commitments), confirmed by cross-checking against
+ * our own already-synced data, not assumed.
+ */
+export interface SourceOverview {
+  domainCount: number;
+  hostCount: number;
+  vpsCount: number;
+  vpsRunning: number;
+  activeUsers: number;
+  concurrentCalls: number;
+  callsThisHour: number;
+  memTotalGb: number;
+  memCommittedGb: number;
+  storageTotalGb: number;
+  storageCommittedGb: number;
+}
+
 export interface SourcePartition {
   sourcePartitionId: number;
   uuid: string;
@@ -108,4 +133,5 @@ export interface SourceConnector {
   stopVps(source: ResolvedSource, sourceVpsId: number): Promise<void>;
   restartVps(source: ResolvedSource, sourceVpsId: number): Promise<void>;
   getCallStats(source: ResolvedSource): Promise<CallStats>;
+  getOverview(source: ResolvedSource): Promise<SourceOverview>;
 }

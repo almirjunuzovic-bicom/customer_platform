@@ -81,6 +81,21 @@ export class SourcesController {
     }
   }
 
+  /** Cluster-wide "how's it doing" summary - see connector.types.ts SourceOverview. */
+  @Get(":id/overview")
+  async overview(@Param("id") id: string) {
+    try {
+      const resolved = await this.sourcesService.resolve(parseIdParam(id));
+      const connector = this.connectorRegistry.get(resolved.connectorType);
+      return await connector.getOverview(resolved);
+    } catch (error) {
+      if (error instanceof SourceUnavailableError) {
+        throw new BadGatewayException(error.message);
+      }
+      throw error;
+    }
+  }
+
   @Post()
   async create(@Body() body: CreateSourceBody) {
     if (!body.key || !body.name) {

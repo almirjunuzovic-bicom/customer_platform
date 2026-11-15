@@ -7,15 +7,18 @@ import {
   type ResolvedSource,
   type SourceConnector,
   type SourceHost,
+  type SourceOverview,
   type SourcePartition,
   type SourceVps,
 } from "../connectors/connector.types";
 import {
   mapCallStats,
+  mapDashboard,
   mapHost,
   mapPartition,
   mapVps,
   type ServerwareCallStatsRaw,
+  type ServerwareDashboardRaw,
   type ServerwareEnvelope,
   type ServerwareHost,
   type ServerwareHostRaw,
@@ -157,6 +160,29 @@ export class ServerwareService implements SourceConnector {
       `/api/networks/${config.netId}/dashboard/vps-call-stats`,
     );
     return mapCallStats(raw);
+  }
+
+  async getOverview(source: ResolvedSource): Promise<SourceOverview> {
+    const config = readConfig(source);
+    const raw = await this.request<ServerwareDashboardRaw>(
+      source,
+      config,
+      `/api/networks/${config.netId}/dashboard`,
+    );
+    const dashboard = mapDashboard(raw);
+    return {
+      domainCount: dashboard.domainCount,
+      hostCount: dashboard.hostCount,
+      vpsCount: dashboard.vpsCount,
+      vpsRunning: dashboard.vpsRunning,
+      activeUsers: dashboard.activeUsers,
+      concurrentCalls: dashboard.ccCount,
+      callsThisHour: dashboard.callStatsCurrHour,
+      memTotalGb: dashboard.memHostsTotalKb / 1024 / 1024,
+      memCommittedGb: dashboard.memVpsesCommittedMb / 1024,
+      storageTotalGb: dashboard.storHostsTotalGb,
+      storageCommittedGb: dashboard.storVpsesCommittedGb,
+    };
   }
 
   /**

@@ -157,8 +157,11 @@ export function SourceDetail() {
                     </TableCell>
                     <TableCell>{host.cpuUsage != null ? `${host.cpuUsage.toFixed(1)}%` : "—"}</TableCell>
                     <TableCell>
+                      {/* host.memTotal is KB (confirmed: matches the dashboard's
+                          mem_hosts_total exactly when summed) - /1024/1024 for GB,
+                          not /1024 (that's only MB, a bug fixed here). */}
                       {host.memUsage != null && host.memTotal
-                        ? `${host.memUsage.toFixed(1)}% of ${Math.round(host.memTotal / 1024)} GB`
+                        ? `${host.memUsage.toFixed(1)}% of ${Math.round(host.memTotal / 1024 / 1024)} GB`
                         : "—"}
                     </TableCell>
                     <TableCell>

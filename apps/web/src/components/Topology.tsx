@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Server } from "lucide-react";
+import { PhoneCall, Server, Users } from "lucide-react";
 import { api, type Host, type Partition, type Source, type VpsInventory } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,23 @@ function Stat({ label, value }: { label: string; value: string | number }) {
     <div className="text-center">
       <p className="text-lg font-semibold tabular-nums">{value}</p>
       <p className="text-xs text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+function UsageBar({ label, usedGb, totalGb }: { label: string; usedGb: number; totalGb: number }) {
+  const pct = totalGb > 0 ? Math.min(100, (usedGb / totalGb) * 100) : 0;
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="tabular-nums text-muted-foreground">
+          {Math.round(usedGb)} / {Math.round(totalGb)} GB
+        </span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+      </div>
     </div>
   );
 }
@@ -29,6 +46,16 @@ function SourceCard({
 }) {
   const running = vps.filter((v) => v.lastKnownState === "RUNNING").length;
   const onlineHosts = hosts.filter((h) => h.online).length;
+  // Cluster-wide "how's it doing" summary - ServerWare/PBXware-specific
+  // (connector.types.ts SourceOverview), so a non-serverware source 502s
+  // here and this section just doesn't render (see isSuccess guard below).
+  const overviewQuery = useQuery({
+    queryKey: ["sources", source.id, "overview"],
+    queryFn: () => api.sourceOverview(source.id),
+    refetchInterval: 10_000,
+    retry: false,
+  });
+  const overview = overviewQuery.data;
 
   return (
     <Link to="/sources/$sourceId" params={{ sourceId: String(source.id) }}>
@@ -45,13 +72,37 @@ function SourceCard({
           </div>
           <p className="text-xs text-muted-foreground">{source.key}</p>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
           <div className="grid grid-cols-4 gap-2">
             <Stat label="VPS" value={vps.length} />
             <Stat label="Running" value={running} />
             <Stat label="Hosts" value={`${onlineHosts}/${hosts.length}`} />
             <Stat label="Partitions" value={partitions.length} />
           </div>
+
+          {overview && (
+            <>
+              <div className="space-y-2">
+                <UsageBar label="Memory" usedGb={overview.memCommittedGb} totalGb={overview.memTotalGb} />
+                <UsageBar
+                  label="Storage"
+                  usedGb={overview.storageCommittedGb}
+                  totalGb={overview.storageTotalGb}
+                />
+              </div>
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <Users className="size-3.5" />
+                  {overview.activeUsers} active users
+                </span>
+                <span className="flex items-center gap-1">
+                  <PhoneCall className="size-3.5" />
+                  {overview.concurrentCalls} calls now
+                </span>
+              </div>
+            </>
+          )}
+
           <SyncStatus source={source} />
         </CardContent>
       </Card>

@@ -151,6 +151,60 @@ export function mapCallStats(raw: ServerwareCallStatsRaw): ServerwareCallStats {
   };
 }
 
+/**
+ * GET /api/networks/:netid/dashboard - confirmed live against lon1:
+ * mem_hosts_total (KB) === SUM(hosts.mem_total), mem_vpses_committed (MB,
+ * a DIFFERENT unit) === SUM(vps_inventory.mem_limit) - cross-checked
+ * against our own already-synced data, not assumed. `rtm` deliberately
+ * excluded from the clean type - it mirrors the controller host's own
+ * live stats specifically (its mem_total matched one specific host
+ * exactly), not a network aggregate, so showing it as "the cluster's load"
+ * would be wrong.
+ */
+export interface ServerwareDashboardRaw {
+  domain_count: number;
+  host_count: number;
+  vps_count: number;
+  vps_running: number;
+  active_users: number;
+  cc_count: number;
+  call_stats_curr_hour: number;
+  mem_hosts_total: number; // KB
+  mem_vpses_committed: number; // MB (not KB - confirmed, see above)
+  stor_hosts_total: number; // GB
+  stor_vpses_committed: number; // GB
+}
+
+export interface ServerwareDashboard {
+  domainCount: number;
+  hostCount: number;
+  vpsCount: number;
+  vpsRunning: number;
+  activeUsers: number;
+  ccCount: number;
+  callStatsCurrHour: number;
+  memHostsTotalKb: number;
+  memVpsesCommittedMb: number;
+  storHostsTotalGb: number;
+  storVpsesCommittedGb: number;
+}
+
+export function mapDashboard(raw: ServerwareDashboardRaw): ServerwareDashboard {
+  return {
+    domainCount: raw.domain_count,
+    hostCount: raw.host_count,
+    vpsCount: raw.vps_count,
+    vpsRunning: raw.vps_running,
+    activeUsers: raw.active_users,
+    ccCount: raw.cc_count,
+    callStatsCurrHour: raw.call_stats_curr_hour,
+    memHostsTotalKb: raw.mem_hosts_total,
+    memVpsesCommittedMb: raw.mem_vpses_committed,
+    storHostsTotalGb: raw.stor_hosts_total,
+    storVpsesCommittedGb: raw.stor_vpses_committed,
+  };
+}
+
 export function mapHost(raw: ServerwareHostRaw): ServerwareHost {
   return {
     serverwareHostId: raw.id,

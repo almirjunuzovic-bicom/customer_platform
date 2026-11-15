@@ -103,6 +103,20 @@ export interface HistorySummary {
   diskUsage: MetricSummary;
 }
 
+export interface SourceOverview {
+  domainCount: number;
+  hostCount: number;
+  vpsCount: number;
+  vpsRunning: number;
+  activeUsers: number;
+  concurrentCalls: number;
+  callsThisHour: number;
+  memTotalGb: number;
+  memCommittedGb: number;
+  storageTotalGb: number;
+  storageCommittedGb: number;
+}
+
 export interface CallStats {
   currentHour: number;
   today: number;
@@ -178,6 +192,7 @@ export const api = {
   setSourceEnabled: (id: number, enabled: boolean) =>
     request<Source>(`/sources/${id}`, "PATCH", { enabled }),
   callStats: (sourceId: number) => request<CallStats>(`/sources/${sourceId}/call-stats`),
+  sourceOverview: (sourceId: number) => request<SourceOverview>(`/sources/${sourceId}/overview`),
   workerStatus: () =>
     request<{ service: string; active: boolean; state?: string }>("/ops/worker-status"),
   restartWorker: () =>
