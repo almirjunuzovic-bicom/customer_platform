@@ -315,6 +315,72 @@ function RestartWorkerButton() {
   );
 }
 
+function DeleteSourceButton({ source }: { source: Source }) {
+  const [open, setOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () => api.deleteSource(source.id, confirmText),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["sources"] });
+      toast.success(`Source "${result.key}" and all its data deleted`, {
+        description: "Restart the worker if it was enabled - its sync job won't stop on its own.",
+      });
+      setOpen(false);
+    },
+    onError: (error) => toast.error((error as Error).message),
+  });
+
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (mutation.isPending) return;
+        if (next) {
+          mutation.reset();
+          setConfirmText("");
+        }
+        setOpen(next);
+      }}
+    >
+      <AlertDialogTrigger render={<Button variant="destructive" size="sm">Delete</Button>} />
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete "{source.name}"?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently deletes the source and EVERYTHING synced under it - hosts, VPS
+            inventory, their metrics history and events, and partitions. There is no undo.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="space-y-1.5">
+          <Label htmlFor="confirm-delete-key">
+            Type <span className="font-mono font-semibold">{source.key}</span> to confirm
+          </Label>
+          <Input
+            id="confirm-delete-key"
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            autoComplete="off"
+          />
+        </div>
+        {mutation.isError && (
+          <p className="text-sm text-destructive">{(mutation.error as Error).message}</p>
+        )}
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={confirmText !== source.key || mutation.isPending}
+            onClick={() => mutation.mutate()}
+          >
+            {mutation.isPending ? "Deleting..." : "Delete permanently"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function AddSourceDialog() {
   const [open, setOpen] = useState(false);
   return (
@@ -368,6 +434,7 @@ export function SourcesAdmin() {
                 <TableHead>Connector</TableHead>
                 <TableHead>Enabled</TableHead>
                 <TableHead>Last sync</TableHead>
+                <TableHead></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -383,6 +450,9 @@ export function SourcesAdmin() {
                   </TableCell>
                   <TableCell>
                     <SyncStatus source={source} />
+                  </TableCell>
+                  <TableCell>
+                    <DeleteSourceButton source={source} />
                   </TableCell>
                 </TableRow>
               ))}

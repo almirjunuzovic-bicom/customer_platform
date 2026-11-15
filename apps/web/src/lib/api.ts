@@ -137,7 +137,7 @@ export interface VpsMetricPoint {
 
 async function request<T>(
   path: string,
-  method: "GET" | "POST" | "PATCH" = "GET",
+  method: "GET" | "POST" | "PATCH" | "DELETE" = "GET",
   body?: unknown,
 ): Promise<T> {
   const token = getToken();
@@ -191,6 +191,8 @@ export const api = {
   createSource: (input: CreateSourceInput) => request<Source>("/sources", "POST", input),
   setSourceEnabled: (id: number, enabled: boolean) =>
     request<Source>(`/sources/${id}`, "PATCH", { enabled }),
+  deleteSource: (id: number, confirmKey: string) =>
+    request<{ key: string }>(`/sources/${id}`, "DELETE", { confirmKey }),
   callStats: (sourceId: number) => request<CallStats>(`/sources/${sourceId}/call-stats`),
   sourceOverview: (sourceId: number) => request<SourceOverview>(`/sources/${sourceId}/overview`),
   workerStatus: () =>

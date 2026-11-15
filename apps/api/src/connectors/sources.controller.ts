@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -24,6 +25,10 @@ interface CreateSourceBody {
 
 interface UpdateSourceBody {
   enabled?: boolean;
+}
+
+interface DeleteSourceBody {
+  confirmKey?: string;
 }
 
 function parseIdParam(id: string): number {
@@ -123,5 +128,26 @@ export class SourcesController {
       throw new BadRequestException(`"enabled" (boolean) is the only field this endpoint supports right now`);
     }
     return this.sourcesService.setEnabled(parseIdParam(id), body.enabled);
+  }
+
+  /**
+   * Deletes a source and every row synced under it (see
+   * SourcesService.delete) - irreversible, no undo. Requires the caller to
+   * pass the source's own `key` as confirmation, checked server-side too
+   * (not just a frontend confirm dialog) - added after a near-miss where
+   * stale context led to deleting data for a source that had, in the
+   * meantime, become real and active (see hst2171-architecture).
+   */
+  @Delete(":id")
+  async remove(@Param("id") id: string, @Body() body: DeleteSourceBody) {
+    const sourceId = parseIdParam(id);
+    const [source] = (await this.sourcesService.list()).filter((s) => s.id === sourceId);
+    if (!source) throw new BadRequestException(`No source with id ${sourceId}`);
+    if (body.confirmKey !== source.key) {
+      throw new BadRequestException(
+        `"confirmKey" must exactly match this source's key ("${source.key}") to delete it`,
+      );
+    }
+    return this.sourcesService.delete(sourceId);
   }
 }

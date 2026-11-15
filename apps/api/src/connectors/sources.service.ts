@@ -1,8 +1,8 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { decryptJson, encryptJson } from "../common/crypto";
 import { DATABASE, type Database } from "../db/database.module";
-import { sources } from "../db/schema";
+import { hosts, partitions, sources, vpsEvents, vpsInventory, vpsMetricsHistory } from "../db/schema";
 import { SourceUnavailableError, type ConnectorType, type ResolvedSource } from "./connector.types";
 
 export interface CreateSourceInput {
@@ -75,6 +75,43 @@ export class SourcesService {
   async setEnabled(id: number, enabled: boolean): Promise<SourceSummary> {
     await this.db.update(sources).set({ enabled }).where(eq(sources.id, id));
     return this.getByIdOrThrow(id);
+  }
+
+  /**
+   * Deletes a source AND everything synced under it - hosts, VPS inventory,
+   * their metrics history/events, and partitions. No ON DELETE CASCADE on
+   * these FKs (by design - a stray DELETE elsewhere must not silently wipe
+   * synced data), so this does it explicitly, children before parents.
+   * Requires the caller to already know the exact key (see
+   * SourcesController) - this is irreversible, there is no undo.
+   *
+   * Does NOT touch the BullMQ scheduler - if the source was enabled, its
+   * scheduled sync job keeps existing until the worker restarts (same
+   * "takes effect on restart" limitation as enable/disable). A sync
+   * attempt against a deleted source fails cleanly (syncSource throws
+   * before writing anything if the source row is gone), it doesn't
+   * resurrect any of this.
+   */
+  async delete(id: number): Promise<{ key: string }> {
+    const [row] = await this.db.select({ key: sources.key }).from(sources).where(eq(sources.id, id)).limit(1);
+    if (!row) throw new NotFoundException(`No source with id ${id}`);
+
+    const vpsRows = await this.db
+      .select({ id: vpsInventory.id })
+      .from(vpsInventory)
+      .where(eq(vpsInventory.sourceId, id));
+    const vpsIds = vpsRows.map((r) => r.id);
+
+    if (vpsIds.length > 0) {
+      await this.db.delete(vpsMetricsHistory).where(inArray(vpsMetricsHistory.vpsInventoryId, vpsIds));
+      await this.db.delete(vpsEvents).where(inArray(vpsEvents.vpsInventoryId, vpsIds));
+    }
+    await this.db.delete(vpsInventory).where(eq(vpsInventory.sourceId, id));
+    await this.db.delete(hosts).where(eq(hosts.sourceId, id));
+    await this.db.delete(partitions).where(eq(partitions.sourceId, id));
+    await this.db.delete(sources).where(eq(sources.id, id));
+
+    return { key: row.key };
   }
 
   /**
