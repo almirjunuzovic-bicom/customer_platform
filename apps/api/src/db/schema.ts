@@ -221,9 +221,9 @@ export const vpsInventory = mysqlTable(
 /**
  * Dense append-only time series - one row per VPS per poll tick. Narrow on
  * purpose (see hst2171-architecture: ~400 VPS x 10s tick ~= 3.46M rows/day).
- * Plan: raw kept ~30-90 days, rolled up + pruned beyond that (not yet
- * implemented - rollup job is a later task, RANGE partitioning by
- * capturedAt is the planned mechanism for cheap pruning).
+ * Raw 10s resolution kept only ~1h (see rollup/rollup.service.ts) - beyond
+ * that, data lives only in vpsMetricsRollup at progressively coarser
+ * resolution. Pruned by the same rollup job once it's been rolled up.
  */
 export const vpsMetricsHistory = mysqlTable(
   "vps_metrics_history",
@@ -244,6 +244,52 @@ export const vpsMetricsHistory = mysqlTable(
     vpsCapturedIdx: index("vps_metrics_history_vps_captured_idx").on(
       t.vpsInventoryId,
       t.capturedAt,
+    ),
+  }),
+);
+
+/**
+ * Tiered rollup - one row per VPS per bucket per tier. `bucketSeconds`
+ * marks which tier a row belongs to (180|600|1800|3600 - see
+ * rollup/rollup.constants.ts); multiple tiers coexist in this one table
+ * rather than one table per tier, so adding/changing a tier is a data
+ * change, not a schema migration. Averages are of averages past the first
+ * tier (raw is gone by the time a row gets rolled from e.g. 180s into
+ * 600s) - standard, accepted imprecision for a monitoring rollup, not a
+ * bug (same tradeoff RRDtool/Graphite/Prometheus downsampling make).
+ * uptimeSeconds is MAX, not AVG, at every tier - exact regardless of
+ * cascading, since max-of-max loses nothing.
+ */
+export const vpsMetricsRollup = mysqlTable(
+  "vps_metrics_rollup",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    vpsInventoryId: int("vps_inventory_id")
+      .notNull()
+      .references(() => vpsInventory.id),
+    bucketSeconds: int("bucket_seconds").notNull(),
+    bucketStart: timestamp("bucket_start").notNull(),
+    cpuUsageAvg: float("cpu_usage_avg"),
+    // Max/min per bucket, not just avg - so /history/summary's peak/min
+    // stat tiles stay meaningful once raw data for that range is gone (an
+    // average-of-averages would understate a real spike, exactly what that
+    // endpoint was built to avoid - see vps.controller.ts).
+    cpuUsageMax: float("cpu_usage_max"),
+    cpuUsageMin: float("cpu_usage_min"),
+    memUsageAvg: float("mem_usage_avg"),
+    memUsageMax: float("mem_usage_max"),
+    memUsageMin: float("mem_usage_min"),
+    diskUsageAvg: float("disk_usage_avg"),
+    diskUsageMax: float("disk_usage_max"),
+    diskUsageMin: float("disk_usage_min"),
+    ccCountAvg: float("cc_count_avg"),
+    uptimeSecondsMax: bigint("uptime_seconds_max", { mode: "number" }),
+  },
+  (t) => ({
+    vpsBucketUnique: uniqueIndex("vps_metrics_rollup_vps_bucket_uq").on(
+      t.vpsInventoryId,
+      t.bucketSeconds,
+      t.bucketStart,
     ),
   }),
 );

@@ -9,9 +9,10 @@ import "dotenv/config";
 import { NestFactory } from "@nestjs/core";
 import { Logger } from "@nestjs/common";
 import { Module } from "@nestjs/common";
+import { RollupModule } from "./rollup/rollup.module";
 import { SchedulingModule } from "./scheduling/scheduling.module";
 
-@Module({ imports: [SchedulingModule] })
+@Module({ imports: [SchedulingModule, RollupModule] })
 class WorkerModule {}
 
 async function bootstrap() {

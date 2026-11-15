@@ -19,7 +19,7 @@ import { ConnectorRegistryService } from "../connectors/connector-registry.servi
 import { SourceUnavailableError } from "../connectors/connector.types";
 import { SourcesService } from "../connectors/sources.service";
 import { DATABASE, type Database } from "../db/database.module";
-import { sources, vpsEvents, vpsInventory, vpsMetricsHistory } from "../db/schema";
+import { sources, vpsEvents, vpsInventory, vpsMetricsHistory, vpsMetricsRollup } from "../db/schema";
 
 const VPS_ACTIONS = ["start", "stop", "restart"] as const;
 type VpsAction = (typeof VPS_ACTIONS)[number];
@@ -36,12 +36,77 @@ const PENDING_ACTION_TIMEOUT_MS = 120_000;
 // hypothetical: nothing previously stopped this).
 const MAX_RAW_HISTORY_ROWS = 10_000;
 
+const HOUR_MS = 3600_000;
+// Matches the rollup job's tiers exactly (see rollup/rollup.constants.ts) -
+// raw data genuinely doesn't exist past 1h anymore (rolled up + pruned),
+// so a query reaching further back MUST read from the matching rollup
+// tier instead. Each entry: "if the request reaches back at most this far,
+// use this bucket size" - checked in order, first match wins.
+const TIER_BOUNDARIES: { upToMs: number; bucketSeconds: number }[] = [
+  { upToMs: 6 * HOUR_MS, bucketSeconds: 180 }, // 1h-6h old -> 3min tier
+  { upToMs: 24 * HOUR_MS, bucketSeconds: 600 }, // 6h-24h old -> 10min tier
+  { upToMs: 7 * 24 * HOUR_MS, bucketSeconds: 1800 }, // 24h-7d old -> 30min tier
+];
+const OLDEST_TIER_BUCKET_SECONDS = 3600; // 7d+ old -> 1h tier, kept forever
+
+/** null = raw table still has this range (within the last 1h), no `from` given, or `from` is in the future. */
+function pickRollupTier(fromDate: Date | undefined): number | null {
+  if (!fromDate) return null;
+  const age = Date.now() - fromDate.getTime();
+  if (age <= HOUR_MS) return null;
+  for (const tier of TIER_BOUNDARIES) {
+    if (age <= tier.upToMs) return tier.bucketSeconds;
+  }
+  return OLDEST_TIER_BUCKET_SECONDS;
+}
+
 function parseIntParam(value: string, name: string): number {
   const n = Number(value);
   if (!Number.isInteger(n)) {
     throw new BadRequestException(`"${name}" must be an integer`);
   }
   return n;
+}
+
+interface SummaryAggregates {
+  cpuPeak: number | null;
+  cpuAvg: number | null;
+  cpuMin: number | null;
+  memPeak: number | null;
+  memAvg: number | null;
+  memMin: number | null;
+  diskPeak: number | null;
+  diskAvg: number | null;
+  diskMin: number | null;
+}
+
+interface SummaryLatest {
+  cpuUsage: number | null;
+  memUsage: number | null;
+  diskUsage: number | null;
+}
+
+function buildHistorySummary(aggregates: SummaryAggregates, latest: SummaryLatest | undefined) {
+  return {
+    cpuUsage: {
+      peak: aggregates.cpuPeak,
+      avg: aggregates.cpuAvg,
+      min: aggregates.cpuMin,
+      current: latest?.cpuUsage ?? null,
+    },
+    memUsage: {
+      peak: aggregates.memPeak,
+      avg: aggregates.memAvg,
+      min: aggregates.memMin,
+      current: latest?.memUsage ?? null,
+    },
+    diskUsage: {
+      peak: aggregates.diskPeak,
+      avg: aggregates.diskAvg,
+      min: aggregates.diskMin,
+      current: latest?.diskUsage ?? null,
+    },
+  };
 }
 
 function parseDateParam(value: string, name: string): Date {
@@ -99,15 +164,15 @@ export class VpsController {
   }
 
   /**
-   * Without `bucketSeconds`: raw rows (unbounded - callers own range-scoping
-   * it). With it: one averaged row per bucket, computed in SQL - added
-   * after confirming live that "7 days"/"All" in the frontend's Details
-   * dialog was fetching and parsing tens of thousands of raw rows just to
-   * downsample them client-side, which only fixed the chart's render cost,
-   * not the network/DB cost of hauling every row over in the first place.
-   * See history/summary for exact (non-bucketed) peak/avg/min/current -
-   * that's a separate SQL aggregate, deliberately NOT derived from these
-   * averaged buckets, which would already have smoothed real spikes away.
+   * Raw 10s data only exists for the last ~1h (rolled up + pruned beyond
+   * that, see rollup/rollup.service.ts) - a `from` reaching further back
+   * is served from the matching rollup tier instead, at that tier's native
+   * resolution (client `bucketSeconds` is advisory for the still-raw <1h
+   * path only; it can't ask for finer than a tier's stored resolution once
+   * the range falls there, because finer data genuinely doesn't exist
+   * anymore). See history/summary for exact (non-bucketed, tier-aware)
+   * peak/avg/min/current - deliberately separate so a coarse bucket never
+   * affects those numbers.
    */
   @Get(":id/history")
   async history(
@@ -117,16 +182,43 @@ export class VpsController {
     @Query("bucketSeconds") bucketSeconds?: string,
   ) {
     const vpsId = parseIntParam(id, "id");
-    const conditions = [eq(vpsMetricsHistory.vpsInventoryId, vpsId)];
+    const fromDate = from ? parseDateParam(from, "from") : undefined;
+    const toDate = to ? parseDateParam(to, "to") : undefined;
+    const tier = pickRollupTier(fromDate);
 
-    if (from) conditions.push(gte(vpsMetricsHistory.capturedAt, parseDateParam(from, "from")));
-    if (to) conditions.push(lte(vpsMetricsHistory.capturedAt, parseDateParam(to, "to")));
+    if (tier !== null) {
+      const conditions = [
+        eq(vpsMetricsRollup.vpsInventoryId, vpsId),
+        eq(vpsMetricsRollup.bucketSeconds, tier),
+      ];
+      if (fromDate) conditions.push(gte(vpsMetricsRollup.bucketStart, fromDate));
+      if (toDate) conditions.push(lte(vpsMetricsRollup.bucketStart, toDate));
+      const rows = await this.db
+        .select({
+          capturedAt: vpsMetricsRollup.bucketStart,
+          state: sql<string>`''`.as("state"), // not tracked per-bucket in the rollup tiers
+          cpuUsage: vpsMetricsRollup.cpuUsageAvg,
+          memUsage: vpsMetricsRollup.memUsageAvg,
+          diskUsage: vpsMetricsRollup.diskUsageAvg,
+          ccCount: vpsMetricsRollup.ccCountAvg,
+          uptimeSeconds: vpsMetricsRollup.uptimeSecondsMax,
+        })
+        .from(vpsMetricsRollup)
+        .where(and(...conditions))
+        .orderBy(asc(vpsMetricsRollup.bucketStart));
+      return rows;
+    }
+
+    const conditions = [eq(vpsMetricsHistory.vpsInventoryId, vpsId)];
+    if (fromDate) conditions.push(gte(vpsMetricsHistory.capturedAt, fromDate));
+    if (toDate) conditions.push(lte(vpsMetricsHistory.capturedAt, toDate));
 
     if (!bucketSeconds) {
       // Most-recent-N, not oldest-N - a plain ascending LIMIT would cut off
       // the newest data instead of the oldest, which is backwards for a
       // monitoring chart. Capped regardless of from/to, not just when both
-      // are missing - a wide explicit range is the same risk.
+      // are missing - a wide explicit range is the same risk (though now
+      // self-limiting anyway once raw-tier pruning has run).
       const rows = await this.db
         .select()
         .from(vpsMetricsHistory)
@@ -164,10 +256,12 @@ export class VpsController {
 
   /**
    * Exact peak/average/min/current for the given range, computed as a
-   * single SQL aggregate pass - cheap regardless of how many raw rows exist
-   * in that range (unlike fetching them all to compute this client-side).
-   * Deliberately separate from the (possibly bucketed) /history endpoint
-   * above so a coarse chart bucket size never affects these numbers.
+   * single SQL aggregate pass. Reads from the matching rollup tier once
+   * `from` reaches past raw's ~1h retention (see history above) - peak/min
+   * stay exact there too, since each rollup bucket keeps its own max/min,
+   * not just an average (see schema.ts vpsMetricsRollup) - an average-of-
+   * averages would have understated a real spike, exactly what this
+   * endpoint exists to avoid.
    */
   @Get(":id/history/summary")
   async historySummary(
@@ -176,9 +270,53 @@ export class VpsController {
     @Query("to") to?: string,
   ) {
     const vpsId = parseIntParam(id, "id");
+    const fromDate = from ? parseDateParam(from, "from") : undefined;
+    const toDate = to ? parseDateParam(to, "to") : undefined;
+    const tier = pickRollupTier(fromDate);
+
+    if (tier !== null) {
+      const conditions = [
+        eq(vpsMetricsRollup.vpsInventoryId, vpsId),
+        eq(vpsMetricsRollup.bucketSeconds, tier),
+      ];
+      if (fromDate) conditions.push(gte(vpsMetricsRollup.bucketStart, fromDate));
+      if (toDate) conditions.push(lte(vpsMetricsRollup.bucketStart, toDate));
+
+      const [aggregates] = await this.db
+        .select({
+          cpuPeak: sql<number | null>`MAX(${vpsMetricsRollup.cpuUsageMax})`,
+          cpuAvg: sql<number | null>`AVG(${vpsMetricsRollup.cpuUsageAvg})`,
+          cpuMin: sql<number | null>`MIN(${vpsMetricsRollup.cpuUsageMin})`,
+          memPeak: sql<number | null>`MAX(${vpsMetricsRollup.memUsageMax})`,
+          memAvg: sql<number | null>`AVG(${vpsMetricsRollup.memUsageAvg})`,
+          memMin: sql<number | null>`MIN(${vpsMetricsRollup.memUsageMin})`,
+          diskPeak: sql<number | null>`MAX(${vpsMetricsRollup.diskUsageMax})`,
+          diskAvg: sql<number | null>`AVG(${vpsMetricsRollup.diskUsageAvg})`,
+          diskMin: sql<number | null>`MIN(${vpsMetricsRollup.diskUsageMin})`,
+        })
+        .from(vpsMetricsRollup)
+        .where(and(...conditions));
+
+      // "current" is the latest bucket's average, not a true instantaneous
+      // value - that's genuinely the best available once raw data for this
+      // range is gone, not an approximation we chose over something better.
+      const [latest] = await this.db
+        .select({
+          cpuUsage: vpsMetricsRollup.cpuUsageAvg,
+          memUsage: vpsMetricsRollup.memUsageAvg,
+          diskUsage: vpsMetricsRollup.diskUsageAvg,
+        })
+        .from(vpsMetricsRollup)
+        .where(and(...conditions))
+        .orderBy(desc(vpsMetricsRollup.bucketStart))
+        .limit(1);
+
+      return buildHistorySummary(aggregates, latest);
+    }
+
     const conditions = [eq(vpsMetricsHistory.vpsInventoryId, vpsId)];
-    if (from) conditions.push(gte(vpsMetricsHistory.capturedAt, parseDateParam(from, "from")));
-    if (to) conditions.push(lte(vpsMetricsHistory.capturedAt, parseDateParam(to, "to")));
+    if (fromDate) conditions.push(gte(vpsMetricsHistory.capturedAt, fromDate));
+    if (toDate) conditions.push(lte(vpsMetricsHistory.capturedAt, toDate));
 
     const [aggregates] = await this.db
       .select({
@@ -206,26 +344,7 @@ export class VpsController {
       .orderBy(desc(vpsMetricsHistory.capturedAt))
       .limit(1);
 
-    return {
-      cpuUsage: {
-        peak: aggregates.cpuPeak,
-        avg: aggregates.cpuAvg,
-        min: aggregates.cpuMin,
-        current: latest?.cpuUsage ?? null,
-      },
-      memUsage: {
-        peak: aggregates.memPeak,
-        avg: aggregates.memAvg,
-        min: aggregates.memMin,
-        current: latest?.memUsage ?? null,
-      },
-      diskUsage: {
-        peak: aggregates.diskPeak,
-        avg: aggregates.diskAvg,
-        min: aggregates.diskMin,
-        current: latest?.diskUsage ?? null,
-      },
-    };
+    return buildHistorySummary(aggregates, latest);
   }
 
   @Get(":id/events")
