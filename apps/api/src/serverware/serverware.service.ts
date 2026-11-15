@@ -99,15 +99,37 @@ export class ServerwareService {
   ): Promise<void> {
     const cluster = this.getCluster(clusterKey);
     const path = `/api/networks/${cluster.netId}/vpses/${serverwareVpsId}/${action}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
       // No automatic retry here - per "Never assume a VPS's state changed
       // just because this platform sent an API call" (SERVERWARE_API.md
       // §0), the caller must re-read state afterward anyway, so we don't
       // compound that with blind retries on an action whose first attempt
       // may or may not have actually landed.
-      await this.doFetch<unknown>(cluster, path, "POST");
+      //
+      // Confirmed live (2026-11-15): this endpoint needs a JSON body, even
+      // an empty one - a bodyless POST 500s with "JSON payload is empty".
+      // A successful call returns 202 with NO response body at all, unlike
+      // every read endpoint's {status, data} envelope - so this does not
+      // go through the shared doFetch/envelope parsing.
+      const response = await fetch(`${cluster.baseUrl}${path}`, {
+        method: "POST",
+        headers: {
+          "SW-API-Token": cluster.apiToken,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        throw new Error(`HTTP ${response.status} from ${cluster.key}${path}: ${text}`);
+      }
     } catch (error) {
       throw new ServerwareUnavailableError(cluster.key, error);
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -143,13 +165,11 @@ export class ServerwareService {
   private async doFetch<T>(
     cluster: ServerwareClusterConfig,
     path: string,
-    method: "GET" | "POST" = "GET",
   ): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
       const response = await fetch(`${cluster.baseUrl}${path}`, {
-        method,
         headers: { "SW-API-Token": cluster.apiToken },
         signal: controller.signal,
       });
