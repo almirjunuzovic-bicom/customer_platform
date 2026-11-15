@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
+import { CheckCircle2, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -87,7 +88,12 @@ export function SourceDetail() {
                     <TableCell className="font-medium">{host.name}</TableCell>
                     <TableCell>{host.purpose ?? "—"}</TableCell>
                     <TableCell>
-                      <Badge variant={host.online ? "default" : "destructive"}>
+                      <Badge variant={host.online ? "success" : "destructive"}>
+                        {host.online ? (
+                          <CheckCircle2 className="size-3" />
+                        ) : (
+                          <XCircle className="size-3" />
+                        )}
                         {host.state ?? (host.online ? "online" : "offline")}
                       </Badge>
                     </TableCell>
