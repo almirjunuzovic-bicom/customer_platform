@@ -70,14 +70,17 @@ export interface CallStats {
  * live stats - deliberately NOT exposed here for that reason). Units
  * normalized to GB here - SERVERware's own raw payload mixes KB (host
  * totals) and MB (VPS commitments), confirmed by cross-checking against
- * our own already-synced data, not assumed.
+ * our own already-synced data, not assumed. Also deliberately excludes the
+ * raw dashboard payload's `active_users` - confirmed via source read to be
+ * a SERVERware-internal sw-auth session count (one per API token in active
+ * use), not a partition/domain/tenant metric - not useful here at all, per
+ * the user, so it's dropped entirely rather than kept-but-hidden.
  */
 export interface SourceOverview {
   domainCount: number;
   hostCount: number;
   vpsCount: number;
   vpsRunning: number;
-  activeUsers: number;
   concurrentCalls: number;
   callsThisHour: number;
   memTotalGb: number;

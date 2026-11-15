@@ -108,7 +108,6 @@ export interface SourceOverview {
   hostCount: number;
   vpsCount: number;
   vpsRunning: number;
-  activeUsers: number;
   concurrentCalls: number;
   callsThisHour: number;
   memTotalGb: number;

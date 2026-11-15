@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { PhoneCall, Server, Users } from "lucide-react";
+import { PhoneCall, Server } from "lucide-react";
 import { api, type Host, type Partition, type Source, type VpsInventory } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -91,10 +91,6 @@ function SourceCard({
                 />
               </div>
               <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <Users className="size-3.5" />
-                  {overview.activeUsers} active users
-                </span>
                 <span className="flex items-center gap-1">
                   <PhoneCall className="size-3.5" />
                   {overview.concurrentCalls} calls now

@@ -166,6 +166,11 @@ export interface ServerwareDashboardRaw {
   host_count: number;
   vps_count: number;
   vps_running: number;
+  // Deliberately NOT mapped into ServerwareDashboard/SourceOverview - this
+  // is sw-auth's own live session count (one per API token in active use),
+  // not partitions/domains/tenants/real users despite the name, confirmed
+  // via source read. Not useful to this app, per the user, so dropped here
+  // rather than carried through unused.
   active_users: number;
   cc_count: number;
   call_stats_curr_hour: number;
@@ -180,7 +185,6 @@ export interface ServerwareDashboard {
   hostCount: number;
   vpsCount: number;
   vpsRunning: number;
-  activeUsers: number;
   ccCount: number;
   callStatsCurrHour: number;
   memHostsTotalKb: number;
@@ -195,7 +199,6 @@ export function mapDashboard(raw: ServerwareDashboardRaw): ServerwareDashboard {
     hostCount: raw.host_count,
     vpsCount: raw.vps_count,
     vpsRunning: raw.vps_running,
-    activeUsers: raw.active_users,
     ccCount: raw.cc_count,
     callStatsCurrHour: raw.call_stats_curr_hour,
     memHostsTotalKb: raw.mem_hosts_total,

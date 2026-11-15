@@ -175,7 +175,6 @@ export class ServerwareService implements SourceConnector {
       hostCount: dashboard.hostCount,
       vpsCount: dashboard.vpsCount,
       vpsRunning: dashboard.vpsRunning,
-      activeUsers: dashboard.activeUsers,
       concurrentCalls: dashboard.ccCount,
       callsThisHour: dashboard.callStatsCurrHour,
       memTotalGb: dashboard.memHostsTotalKb / 1024 / 1024,
