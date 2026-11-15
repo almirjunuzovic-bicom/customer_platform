@@ -1,5 +1,7 @@
 import { HttpException, HttpStatus, Controller, Get, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Roles } from "../auth/roles.decorator";
+import { RolesGuard } from "../auth/roles.guard";
 import { OpsService } from "./ops.service";
 
 @Controller("ops")
@@ -13,6 +15,8 @@ export class OpsController {
   }
 
   @Post("restart-worker")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("admin")
   async restartWorker() {
     try {
       await this.opsService.restartWorker();

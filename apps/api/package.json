@@ -12,6 +12,7 @@
     "api:dev": "tsx watch src/api.ts",
     "seed:user": "tsx src/auth/seed-user.manual.ts",
     "revoke:user": "tsx src/auth/revoke-user.manual.ts",
+    "set:role": "tsx src/auth/set-role.manual.ts",
     "add:source": "tsx src/connectors/add-source.manual.ts",
     "build": "tsc -p .",
     "worker:start": "node dist/worker.js",

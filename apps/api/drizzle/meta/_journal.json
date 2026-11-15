@@ -64,6 +64,13 @@
       "when": 1794728841239,
       "tag": "0008_short_blink",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1794743165401,
+      "tag": "0009_fixed_dragon_lord",
+      "breakpoints": true
     }
   ]
 }

@@ -11,6 +11,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Roles } from "../auth/roles.decorator";
+import { RolesGuard } from "../auth/roles.guard";
 import { OpsService } from "../ops/ops.service";
 import { ConnectorRegistryService } from "./connector-registry.service";
 import { CONNECTOR_TYPES, SourceUnavailableError, type ConnectorType } from "./connector.types";
@@ -104,6 +106,8 @@ export class SourcesController {
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("admin")
   async create(@Body() body: CreateSourceBody) {
     if (!body.key || !body.name) {
       throw new BadRequestException(`"key" and "name" are required`);
@@ -127,6 +131,8 @@ export class SourcesController {
   }
 
   @Patch(":id")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("admin")
   async update(@Param("id") id: string, @Body() body: UpdateSourceBody) {
     if (typeof body.enabled !== "boolean") {
       throw new BadRequestException(`"enabled" (boolean) is the only field this endpoint supports right now`);
@@ -145,6 +151,8 @@ export class SourcesController {
    * meantime, become real and active (see hst2171-architecture).
    */
   @Delete(":id")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("admin")
   async remove(@Param("id") id: string, @Body() body: DeleteSourceBody) {
     const sourceId = parseIdParam(id);
     const [source] = (await this.sourcesService.list()).filter((s) => s.id === sourceId);

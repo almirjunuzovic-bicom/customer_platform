@@ -52,6 +52,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/lib/auth-context";
 
 // Only serverware has a real connector today (see connectors/connector.types.ts
 // on the backend) - aws/proxmox resolve to UnsupportedConnector, so their
@@ -61,6 +62,7 @@ import { Textarea } from "@/components/ui/textarea";
 const STRUCTURED_CONNECTOR_TYPES: ConnectorType[] = ["serverware"];
 
 function EnabledToggle({ source }: { source: Source }) {
+  const { isAdmin } = useAuth();
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: (enabled: boolean) => api.setSourceEnabled(source.id, enabled),
@@ -76,8 +78,9 @@ function EnabledToggle({ source }: { source: Source }) {
   return (
     <Switch
       checked={source.enabled}
-      disabled={mutation.isPending}
+      disabled={mutation.isPending || !isAdmin}
       onCheckedChange={(checked) => mutation.mutate(checked)}
+      title={isAdmin ? undefined : "Admin only"}
     />
   );
 }
@@ -258,6 +261,7 @@ function AddSourceForm({ onDone }: { onDone: () => void }) {
 }
 
 function RestartWorkerButton() {
+  const { isAdmin } = useAuth();
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const status = useQuery({
@@ -292,7 +296,13 @@ function RestartWorkerButton() {
           setOpen(next);
         }}
       >
-        <AlertDialogTrigger render={<Button variant="outline">Restart worker</Button>} />
+        <AlertDialogTrigger
+          render={
+            <Button variant="outline" disabled={!isAdmin} title={isAdmin ? undefined : "Admin only"}>
+              Restart worker
+            </Button>
+          }
+        />
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Restart the sync worker?</AlertDialogTitle>
@@ -319,6 +329,7 @@ function RestartWorkerButton() {
 }
 
 function DeleteSourceButton({ source }: { source: Source }) {
+  const { isAdmin } = useAuth();
   const [open, setOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const queryClient = useQueryClient();
@@ -346,7 +357,18 @@ function DeleteSourceButton({ source }: { source: Source }) {
         setOpen(next);
       }}
     >
-      <AlertDialogTrigger render={<Button variant="destructive" size="sm">Delete</Button>} />
+      <AlertDialogTrigger
+        render={
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={!isAdmin}
+            title={isAdmin ? undefined : "Admin only"}
+          >
+            Delete
+          </Button>
+        }
+      />
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete "{source.name}"?</AlertDialogTitle>
@@ -385,10 +407,17 @@ function DeleteSourceButton({ source }: { source: Source }) {
 }
 
 function AddSourceDialog() {
+  const { isAdmin } = useAuth();
   const [open, setOpen] = useState(false);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button>Add source</Button>} />
+      <DialogTrigger
+        render={
+          <Button disabled={!isAdmin} title={isAdmin ? undefined : "Admin only"}>
+            Add source
+          </Button>
+        }
+      />
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add source</DialogTitle>

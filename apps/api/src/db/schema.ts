@@ -28,6 +28,11 @@ export const users = mysqlTable("users", {
   email: varchar("email", { length: 256 }).notNull().unique(),
   name: varchar("name", { length: 128 }).notNull(),
   passwordHash: varchar("password_hash", { length: 256 }).notNull(),
+  // "admin" can manage sources (add/enable/disable/delete) and restart the
+  // worker; "staff" can do everything else (view infra, start/stop/restart
+  // VPSes - the Hosting Team's core day-to-day job). Defaults to "staff" -
+  // admin is granted explicitly, never implicitly by being the Nth user.
+  role: mysqlEnum("role", ["admin", "staff"]).notNull().default("staff"),
   // Embedded in every issued JWT. Bumping this invalidates every outstanding
   // token for this user at once - the only revocation mechanism we have
   // (JWTs are otherwise stateless/unrevokable before they expire). See

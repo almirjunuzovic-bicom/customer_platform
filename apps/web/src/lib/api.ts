@@ -173,9 +173,11 @@ export interface CreateSourceInput {
   credentials: Record<string, unknown>;
 }
 
+export type UserRole = "admin" | "staff";
+
 export interface LoginResponse {
   token: string;
-  user: { id: number; email: string; name: string };
+  user: { id: number; email: string; name: string; role: UserRole };
 }
 
 export const api = {
@@ -189,6 +191,7 @@ export const api = {
     if (!res.ok) throw new UnauthorizedError(body.message ?? "Login failed");
     return body;
   },
+  me: () => request<{ id: number; email: string; name: string; role: UserRole }>("/auth/me"),
   sources: () => request<Source[]>("/sources"),
   createSource: (input: CreateSourceInput) => request<Source>("/sources", "POST", input),
   setSourceEnabled: (id: number, enabled: boolean) =>

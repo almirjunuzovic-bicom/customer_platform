@@ -72,7 +72,7 @@ export class AuthService {
     };
     const token = jwt.sign(payload, this.jwtSecret, { expiresIn: JWT_EXPIRY });
 
-    return { token, user: { id: user.id, email: user.email, name: user.name } };
+    return { token, user: { id: user.id, email: user.email, name: user.name, role: user.role } };
   }
 
   // Async on purpose - checks the token's version against the CURRENT value
@@ -88,7 +88,7 @@ export class AuthService {
     }
 
     const [user] = await this.db
-      .select({ tokenVersion: users.tokenVersion })
+      .select({ tokenVersion: users.tokenVersion, role: users.role })
       .from(users)
       .where(eq(users.id, payload.sub))
       .limit(1);
@@ -97,7 +97,7 @@ export class AuthService {
       throw new UnauthorizedException("Token has been revoked");
     }
 
-    return { id: payload.sub, email: payload.email, name: payload.name };
+    return { id: payload.sub, email: payload.email, name: payload.name, role: user.role };
   }
 
   private assertNotRateLimited(attemptKey: string): void {
