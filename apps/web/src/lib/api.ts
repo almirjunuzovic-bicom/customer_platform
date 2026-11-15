@@ -50,9 +50,10 @@ export interface VpsMetricPoint {
   uptimeSeconds: number | null;
 }
 
-async function request<T>(path: string): Promise<T> {
+async function request<T>(path: string, method: "GET" | "POST" = "GET"): Promise<T> {
   const token = getToken();
   const res = await fetch(`${API_BASE_URL}${path}`, {
+    method,
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) {
@@ -63,6 +64,8 @@ async function request<T>(path: string): Promise<T> {
   }
   return res.json();
 }
+
+export type VpsAction = "start" | "stop" | "restart";
 
 export interface LoginResponse {
   token: string;
@@ -84,4 +87,9 @@ export const api = {
   partitions: () => request<Partition[]>("/partitions"),
   vpsList: () => request<VpsInventory[]>("/vps"),
   vpsHistory: (id: number) => request<VpsMetricPoint[]>(`/vps/${id}/history`),
+  vpsAction: (id: number, action: VpsAction) =>
+    request<{ status: string; action: string; vpsId: number }>(
+      `/vps/${id}/actions/${action}`,
+      "POST",
+    ),
 };

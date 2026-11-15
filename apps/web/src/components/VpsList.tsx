@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { VpsActions } from "@/components/VpsActions";
 
 function StateBadge({ state }: { state: string | null }) {
   if (state === "RUNNING") return <Badge>RUNNING</Badge>;
@@ -32,6 +33,9 @@ function VpsRow({ vps }: { vps: VpsInventory }) {
       <TableCell>{vps.cpuLimit || "—"}</TableCell>
       <TableCell className="text-muted-foreground">
         {(vps.ipAddresses ?? []).join(", ") || "—"}
+      </TableCell>
+      <TableCell>
+        <VpsActions vpsId={vps.id} vpsName={vps.name} state={vps.lastKnownState} />
       </TableCell>
     </TableRow>
   );
@@ -78,6 +82,7 @@ export function VpsList() {
                 <TableHead>Memory</TableHead>
                 <TableHead>CPU</TableHead>
                 <TableHead>IP Addresses</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
