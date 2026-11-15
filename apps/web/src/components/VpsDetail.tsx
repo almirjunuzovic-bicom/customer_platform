@@ -1,5 +1,7 @@
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
+import { Maximize2 } from "lucide-react";
 import {
   CartesianGrid,
   Line,
@@ -9,9 +11,18 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { api } from "@/lib/api";
+import { api, type VpsMetricPoint } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -48,16 +59,25 @@ function MetricChart({
   dataKey,
   color,
   data,
+  onExpand,
 }: {
   title: string;
   dataKey: string;
   color: string;
   data: Array<Record<string, string | number | null>>;
+  onExpand: () => void;
 }) {
   return (
     <div>
       {/* Single series - no legend box needed, the title already names it. */}
-      <p className="mb-2 text-sm font-medium">{title}</p>
+      <button
+        type="button"
+        onClick={onExpand}
+        className="mb-2 flex items-center gap-1.5 text-sm font-medium hover:text-foreground/80"
+      >
+        {title}
+        <Maximize2 className="size-3.5 text-muted-foreground" />
+      </button>
       <ResponsiveContainer width="100%" height={240}>
         <LineChart data={data} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -93,6 +113,206 @@ function MetricChart({
   );
 }
 
+type MetricKey = "cpu" | "mem" | "disk";
+
+const METRIC_CONFIG: Record<
+  MetricKey,
+  { title: string; field: "cpuUsage" | "memUsage" | "diskUsage"; color: string }
+> = {
+  cpu: { title: "CPU", field: "cpuUsage", color: "var(--chart-1)" },
+  mem: { title: "Memory", field: "memUsage", color: "var(--chart-2)" },
+  disk: { title: "Storage", field: "diskUsage", color: "var(--chart-3)" },
+};
+
+type RangePreset = "1h" | "6h" | "24h" | "7d" | "all" | "custom";
+
+const RANGE_PRESETS: { key: RangePreset; label: string }[] = [
+  { key: "1h", label: "Last hour" },
+  { key: "6h", label: "Last 6 hours" },
+  { key: "24h", label: "Last 24 hours" },
+  { key: "7d", label: "Last 7 days" },
+  { key: "all", label: "All" },
+  { key: "custom", label: "Custom" },
+];
+
+const PRESET_HOURS: Partial<Record<RangePreset, number>> = {
+  "1h": 1,
+  "6h": 6,
+  "24h": 24,
+  "7d": 24 * 7,
+};
+
+function presetToRange(
+  preset: RangePreset,
+  customFrom: string,
+  customTo: string,
+): { from?: string; to?: string } {
+  if (preset === "all") return {};
+  if (preset === "custom") {
+    return {
+      from: customFrom ? new Date(customFrom).toISOString() : undefined,
+      to: customTo ? new Date(customTo).toISOString() : undefined,
+    };
+  }
+  const hours = PRESET_HOURS[preset]!;
+  return { from: new Date(Date.now() - hours * 3600_000).toISOString() };
+}
+
+function computeStats(points: VpsMetricPoint[], field: "cpuUsage" | "memUsage" | "diskUsage") {
+  const values = points.map((p) => p[field]).filter((v): v is number => v != null);
+  if (values.length === 0) return null;
+  const sum = values.reduce((a, b) => a + b, 0);
+  return {
+    peak: Math.max(...values),
+    min: Math.min(...values),
+    avg: sum / values.length,
+    current: values[values.length - 1],
+  };
+}
+
+function StatTile({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border p-3 text-center">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-lg font-semibold tabular-nums">{value.toFixed(1)}%</p>
+    </div>
+  );
+}
+
+function MetricDetailDialog({
+  vpsId,
+  metric,
+  onClose,
+}: {
+  vpsId: number;
+  metric: MetricKey | null;
+  onClose: () => void;
+}) {
+  const [preset, setPreset] = useState<RangePreset>("24h");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+
+  const range = useMemo(
+    () => presetToRange(preset, customFrom, customTo),
+    [preset, customFrom, customTo],
+  );
+  const config = metric ? METRIC_CONFIG[metric] : null;
+
+  const query = useQuery({
+    queryKey: ["vps", vpsId, "history", range.from ?? null, range.to ?? null],
+    queryFn: () => api.vpsHistory(vpsId, range),
+    enabled: metric !== null,
+    refetchInterval: 10_000,
+  });
+
+  const points = query.data ?? [];
+  const stats = config ? computeStats(points, config.field) : null;
+  const chartData = config
+    ? points.map((p) => ({
+        time: new Date(p.capturedAt).toLocaleString([], {
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        value: p[config.field],
+      }))
+    : [];
+
+  return (
+    <Dialog open={metric !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{config?.title} usage</DialogTitle>
+        </DialogHeader>
+
+        <div className="flex flex-wrap gap-2">
+          {RANGE_PRESETS.map((opt) => (
+            <Button
+              key={opt.key}
+              size="sm"
+              variant={preset === opt.key ? "default" : "outline"}
+              onClick={() => setPreset(opt.key)}
+            >
+              {opt.label}
+            </Button>
+          ))}
+        </div>
+
+        {preset === "custom" && (
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="range-from">From</Label>
+              <Input
+                id="range-from"
+                type="datetime-local"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="range-to">To</Label>
+              <Input
+                id="range-to"
+                type="datetime-local"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+
+        {stats && (
+          <div className="grid grid-cols-4 gap-3">
+            <StatTile label="Peak" value={stats.peak} />
+            <StatTile label="Average" value={stats.avg} />
+            <StatTile label="Min" value={stats.min} />
+            <StatTile label="Current" value={stats.current} />
+          </div>
+        )}
+
+        {query.isLoading && <Skeleton className="h-80 w-full" />}
+        {!query.isLoading && chartData.length === 0 && (
+          <p className="text-sm text-muted-foreground">No data in this range.</p>
+        )}
+        {chartData.length > 0 && config && (
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={chartData} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis
+                dataKey="time"
+                stroke="var(--muted-foreground)"
+                fontSize={11}
+                tickLine={false}
+                axisLine={{ stroke: "var(--border)" }}
+                minTickGap={32}
+              />
+              <YAxis
+                stroke="var(--muted-foreground)"
+                fontSize={11}
+                tickLine={false}
+                axisLine={{ stroke: "var(--border)" }}
+                width={32}
+                domain={[0, 100]}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "var(--popover)",
+                  borderColor: "var(--border)",
+                  borderRadius: "var(--radius-md)",
+                  fontSize: 12,
+                }}
+                formatter={(value) => [`${value}%`, config.title]}
+              />
+              <Line type="monotone" dataKey="value" stroke={config.color} strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 const EVENT_LABELS: Record<string, string> = {
   state_changed: "State changed",
   host_changed: "Host changed",
@@ -106,6 +326,7 @@ const EVENT_LABELS: Record<string, string> = {
 export function VpsDetail() {
   const { vpsId } = useParams({ from: "/vps/$vpsId" });
   const id = Number(vpsId);
+  const [expandedMetric, setExpandedMetric] = useState<MetricKey | null>(null);
 
   const vpsQuery = useQuery({
     queryKey: ["vps", id],
@@ -229,18 +450,26 @@ export function VpsDetail() {
           )}
           {chartData.length > 0 && (
             <div className="space-y-6">
-              <MetricChart title="CPU" dataKey="CPU %" color="var(--chart-1)" data={chartData} />
+              <MetricChart
+                title="CPU"
+                dataKey="CPU %"
+                color="var(--chart-1)"
+                data={chartData}
+                onExpand={() => setExpandedMetric("cpu")}
+              />
               <MetricChart
                 title="Memory"
                 dataKey="Memory %"
                 color="var(--chart-2)"
                 data={chartData}
+                onExpand={() => setExpandedMetric("mem")}
               />
               <MetricChart
                 title="Storage"
                 dataKey="Disk %"
                 color="var(--chart-3)"
                 data={chartData}
+                onExpand={() => setExpandedMetric("disk")}
               />
             </div>
           )}
@@ -290,6 +519,12 @@ export function VpsDetail() {
           )}
         </CardContent>
       </Card>
+
+      <MetricDetailDialog
+        vpsId={id}
+        metric={expandedMetric}
+        onClose={() => setExpandedMetric(null)}
+      />
     </div>
   );
 }

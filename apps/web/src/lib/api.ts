@@ -164,7 +164,13 @@ export const api = {
   hosts: () => request<Host[]>("/hosts"),
   vpsList: () => request<VpsInventory[]>("/vps"),
   vpsGet: (id: number) => request<VpsInventory>(`/vps/${id}`),
-  vpsHistory: (id: number) => request<VpsMetricPoint[]>(`/vps/${id}/history`),
+  vpsHistory: (id: number, range?: { from?: string; to?: string }) => {
+    const query = new URLSearchParams();
+    if (range?.from) query.set("from", range.from);
+    if (range?.to) query.set("to", range.to);
+    const qs = query.toString();
+    return request<VpsMetricPoint[]>(`/vps/${id}/history${qs ? `?${qs}` : ""}`);
+  },
   vpsEvents: (id: number) => request<VpsEvent[]>(`/vps/${id}/events`),
   vpsAction: (id: number, action: VpsAction) =>
     request<{ status: string; action: string; vpsId: number }>(
