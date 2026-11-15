@@ -1,23 +1,24 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import { parseCustomerId } from "../common/customer-id";
+import { ConnectorRegistryService } from "../connectors/connector-registry.service";
+import {
+  SourceUnavailableError,
+  type ConnectorType,
+  type SourceHost,
+  type SourcePartition,
+  type SourceVps,
+} from "../connectors/connector.types";
+import { SourcesService } from "../connectors/sources.service";
 import { DATABASE, type Database } from "../db/database.module";
 import {
-  clusters,
   hosts,
   partitions,
+  sources,
   vpsEvents,
   vpsInventory,
   vpsMetricsHistory,
 } from "../db/schema";
-import { ServerwareService } from "../serverware/serverware.service";
-import { ServerwareUnavailableError } from "../serverware/serverware.errors";
-import {
-  type ServerwareHost,
-  type ServerwarePartition,
-  type ServerwareVps,
-} from "../serverware/serverware.types";
-import { loadClusterConfigs } from "../serverware/serverware-cluster.config";
 import type { SyncResult, VpsEventType } from "./sync.types";
 
 @Injectable()
@@ -26,104 +27,85 @@ export class SyncService {
 
   constructor(
     @Inject(DATABASE) private readonly db: Database,
-    @Inject(ServerwareService) private readonly serverware: ServerwareService,
+    @Inject(ConnectorRegistryService) private readonly connectorRegistry: ConnectorRegistryService,
+    @Inject(SourcesService) private readonly sourcesService: SourcesService,
   ) {}
 
-  async syncAllClusters(): Promise<SyncResult[]> {
+  async syncAllSources(): Promise<SyncResult[]> {
+    const enabledSources = await this.sourcesService.listEnabled();
     const results: SyncResult[] = [];
-    for (const { key } of loadClusterConfigs()) {
-      results.push(await this.syncCluster(key));
+    for (const { id } of enabledSources) {
+      results.push(await this.syncSource(id));
     }
     return results;
   }
 
-  async syncCluster(clusterKey: string): Promise<SyncResult> {
+  async syncSource(sourceId: number): Promise<SyncResult> {
     const now = new Date();
+    const [sourceRow] = await this.db.select().from(sources).where(eq(sources.id, sourceId)).limit(1);
+    if (!sourceRow) {
+      // Not a connector problem (e.g. a stale scheduled job for a deleted
+      // source) - a real bug/race, don't hide it as a sync failure.
+      throw new Error(`No source with id ${sourceId}`);
+    }
+
     try {
-      const [swHosts, swVpses, swPartitions] = await Promise.all([
-        this.serverware.listHosts(clusterKey),
-        this.serverware.listVpses(clusterKey),
-        this.serverware.listPartitions(clusterKey),
+      const resolved = await this.sourcesService.resolve(sourceId);
+      const connector = this.connectorRegistry.get(resolved.connectorType);
+
+      const [srcHosts, srcVpses, srcPartitions] = await Promise.all([
+        connector.listHosts(resolved),
+        connector.listVpses(resolved),
+        connector.listPartitions(resolved),
       ]);
 
-      const clusterId = await this.upsertCluster(clusterKey, now);
-      await this.syncHosts(clusterId, swHosts, now);
-      await this.syncPartitions(clusterId, swPartitions, now);
+      await this.syncHosts(sourceId, srcHosts, now);
+      await this.syncPartitions(sourceId, srcPartitions, now);
 
-      const hostIdByServerwareId = await this.idMapFor(hosts, clusterId);
-      const partitionIdByServerwareId = await this.idMapFor(
-        partitions,
-        clusterId,
-      );
+      const hostIdBySourceHostId = await this.idMapFor(hosts, "sourceHostId", sourceId);
+      const partitionIdBySourcePartitionId = await this.idMapFor(partitions, "sourcePartitionId", sourceId);
       await this.syncVpses(
-        clusterId,
-        swVpses,
-        hostIdByServerwareId,
-        partitionIdByServerwareId,
+        sourceId,
+        srcVpses,
+        hostIdBySourceHostId,
+        partitionIdBySourcePartitionId,
+        resolved.connectorType,
         now,
       );
 
       await this.db
-        .update(clusters)
+        .update(sources)
         .set({ lastSyncAt: now, lastSyncOk: true, lastSyncError: null })
-        .where(eq(clusters.id, clusterId));
+        .where(eq(sources.id, sourceId));
 
       return {
-        clusterKey,
+        sourceKey: sourceRow.key,
         ok: true,
-        hostsCount: swHosts.length,
-        vpsesCount: swVpses.length,
-        partitionsCount: swPartitions.length,
+        hostsCount: srcHosts.length,
+        vpsesCount: srcVpses.length,
+        partitionsCount: srcPartitions.length,
       };
     } catch (error) {
-      if (error instanceof ServerwareUnavailableError) {
-        this.logger.warn(`Sync failed for "${clusterKey}": ${error.message}`);
+      if (error instanceof SourceUnavailableError) {
+        this.logger.warn(`Sync failed for "${sourceRow.key}": ${error.message}`);
         await this.db
-          .update(clusters)
+          .update(sources)
           .set({ lastSyncAt: now, lastSyncOk: false, lastSyncError: error.message })
-          .where(eq(clusters.key, clusterKey));
-        return { clusterKey, ok: false, error: error.message };
+          .where(eq(sources.key, sourceRow.key));
+        return { sourceKey: sourceRow.key, ok: false, error: error.message };
       }
-      // Not a ServerWare problem (e.g. a DB error) - a real bug, don't hide it.
+      // Not a connector problem (e.g. a DB error) - a real bug, don't hide it.
       throw error;
     }
   }
 
-  private async upsertCluster(clusterKey: string, now: Date): Promise<number> {
-    const config = loadClusterConfigs().find((c) => c.key === clusterKey);
-    if (!config) throw new Error(`No config for cluster "${clusterKey}"`);
-
-    await this.db
-      .insert(clusters)
-      .values({
-        key: config.key,
-        name: config.key,
-        baseUrl: config.baseUrl,
-        serverwareNetId: config.netId,
-      })
-      .onDuplicateKeyUpdate({
-        set: { baseUrl: config.baseUrl, serverwareNetId: config.netId },
-      });
-
-    const [row] = await this.db
-      .select({ id: clusters.id })
-      .from(clusters)
-      .where(eq(clusters.key, clusterKey))
-      .limit(1);
-    return row.id;
-  }
-
-  private async syncHosts(
-    clusterId: number,
-    swHosts: ServerwareHost[],
-    now: Date,
-  ): Promise<void> {
-    for (const h of swHosts) {
+  private async syncHosts(sourceId: number, srcHosts: SourceHost[], now: Date): Promise<void> {
+    for (const h of srcHosts) {
       await this.db
         .insert(hosts)
         .values({
-          clusterId,
-          serverwareHostId: h.serverwareHostId,
+          sourceId,
+          sourceHostId: h.sourceHostId,
           uuid: h.uuid,
           name: h.name,
           purpose: h.purpose,
@@ -155,18 +137,14 @@ export class SyncService {
     }
   }
 
-  private async syncPartitions(
-    clusterId: number,
-    swPartitions: ServerwarePartition[],
-    now: Date,
-  ): Promise<void> {
-    for (const p of swPartitions) {
+  private async syncPartitions(sourceId: number, srcPartitions: SourcePartition[], now: Date): Promise<void> {
+    for (const p of srcPartitions) {
       const customerId = parseCustomerId(p.company);
       await this.db
         .insert(partitions)
         .values({
-          clusterId,
-          serverwarePartitionId: p.serverwarePartitionId,
+          sourceId,
+          sourcePartitionId: p.sourcePartitionId,
           name: p.name,
           company: p.company,
           crmLink: p.crmLink,
@@ -189,54 +167,57 @@ export class SyncService {
     }
   }
 
-  /** Maps a ServerWare numeric id -> our own autoincrement id, for FK writes. */
+  /** Maps a connector's own native id -> our own autoincrement id, for FK writes. */
   private async idMapFor(
     table: typeof hosts | typeof partitions,
-    clusterId: number,
+    nativeIdField: "sourceHostId" | "sourcePartitionId",
+    sourceId: number,
   ): Promise<Map<number, number>> {
-    const idColumn =
-      table === hosts ? hosts.serverwareHostId : partitions.serverwarePartitionId;
+    const nativeIdColumn =
+      nativeIdField === "sourceHostId" ? hosts.sourceHostId : partitions.sourcePartitionId;
     const rows = await this.db
-      .select({ id: table.id, serverwareId: idColumn })
+      .select({ id: table.id, nativeId: nativeIdColumn })
       .from(table as any)
-      .where(eq((table as any).clusterId, clusterId));
-    return new Map(rows.map((r: any) => [r.serverwareId, r.id]));
+      .where(eq((table as any).sourceId, sourceId));
+    return new Map(rows.map((r: any) => [r.nativeId, r.id]));
   }
 
   private async syncVpses(
-    clusterId: number,
-    swVpses: ServerwareVps[],
-    hostIdByServerwareId: Map<number, number>,
-    partitionIdByServerwareId: Map<number, number>,
+    sourceId: number,
+    srcVpses: SourceVps[],
+    hostIdBySourceHostId: Map<number, number>,
+    partitionIdBySourcePartitionId: Map<number, number>,
+    connectorType: ConnectorType,
     now: Date,
   ): Promise<void> {
     const existingRows = await this.db
       .select()
       .from(vpsInventory)
-      .where(eq(vpsInventory.clusterId, clusterId));
-    const existingByServerwareId = new Map(
-      existingRows.map((r) => [r.serverwareVpsId, r]),
+      .where(eq(vpsInventory.sourceId, sourceId));
+    const existingBySourceVpsId = new Map(
+      existingRows.map((r) => [r.sourceVpsId, r]),
     );
-    const seenServerwareIds = new Set<number>();
+    const seenSourceVpsIds = new Set<number>();
 
-    for (const vps of swVpses) {
-      seenServerwareIds.add(vps.serverwareVpsId);
-      const hostId = hostIdByServerwareId.get(vps.hostId) ?? null;
-      const partitionId = partitionIdByServerwareId.get(vps.partitionId) ?? null;
-      const prior = existingByServerwareId.get(vps.serverwareVpsId);
+    for (const vps of srcVpses) {
+      seenSourceVpsIds.add(vps.sourceVpsId);
+      const hostId = vps.hostId != null ? (hostIdBySourceHostId.get(vps.hostId) ?? null) : null;
+      const partitionId =
+        vps.partitionId != null ? (partitionIdBySourcePartitionId.get(vps.partitionId) ?? null) : null;
+      const prior = existingBySourceVpsId.get(vps.sourceVpsId);
 
       let vpsInventoryId: number;
 
       if (!prior) {
         const [inserted] = await this.db.insert(vpsInventory).values({
-          clusterId,
-          serverwareVpsId: vps.serverwareVpsId,
+          sourceId,
+          sourceVpsId: vps.sourceVpsId,
           uuid: vps.uuid,
           hostId,
           partitionId,
           name: vps.name,
           engine: vps.engine,
-          sourcePlatform: "serverware",
+          sourcePlatform: connectorType,
           lastKnownState: vps.state,
           lastUptimeSeconds: vps.uptimeSeconds,
           task: vps.task || null,
@@ -350,9 +331,9 @@ export class SyncService {
     }
 
     // Anything we had before but didn't see this tick has disappeared from
-    // ServerWare's list - mark removed, don't delete (keep history/audit).
-    for (const [serverwareId, row] of existingByServerwareId) {
-      if (!seenServerwareIds.has(serverwareId) && !row.isRemoved) {
+    // the source's list - mark removed, don't delete (keep history/audit).
+    for (const [sourceVpsId, row] of existingBySourceVpsId) {
+      if (!seenSourceVpsIds.has(sourceVpsId) && !row.isRemoved) {
         await this.db
           .update(vpsInventory)
           .set({ isRemoved: true, lastSyncedAt: now })

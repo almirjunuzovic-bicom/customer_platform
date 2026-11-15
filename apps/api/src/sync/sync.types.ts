@@ -1,5 +1,5 @@
 export interface SyncResult {
-  clusterKey: string;
+  sourceKey: string;
   ok: boolean;
   hostsCount?: number;
   vpsesCount?: number;

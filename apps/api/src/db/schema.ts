@@ -38,18 +38,32 @@ export const users = mysqlTable("users", {
 });
 
 /**
- * One row per SERVERware cluster (lon1, cork1, ...). Base URL + static
- * metadata only - the API token lives in env vars, never in this table.
+ * One row per infrastructure source we poll/manage - a SERVERware cluster
+ * today, an AWS account or Proxmox node later (see connectors/connector.
+ * types.ts and hst2171-architecture: multi-provider adapter pattern).
+ * Physical table name stayed "clusters" on purpose - renaming it would be a
+ * real migration for zero benefit, the TS-level name is what matters for
+ * readability. `config` holds non-secret, connector-specific settings
+ * (serverware: {baseUrl, netId}); `credentialsEncrypted` holds the secret
+ * half (serverware: {apiToken}), AES-256-GCM encrypted at rest - see
+ * common/crypto.ts. Never log or return credentialsEncrypted decrypted
+ * outside SourcesService.resolve().
  */
-export const clusters = mysqlTable("clusters", {
+export const sources = mysqlTable("clusters", {
   id: int("id").autoincrement().primaryKey(),
   key: varchar("key", { length: 32 }).notNull().unique(), // e.g. "lon1"
   name: varchar("name", { length: 128 }).notNull(),
-  baseUrl: varchar("base_url", { length: 256 }).notNull(),
-  serverwareNetId: int("serverware_net_id").notNull().default(1),
+  // "serverware" | "aws" | "proxmox" - see connectors/connector.types.ts
+  // ConnectorType. Plain varchar, not an enum: the known set will grow
+  // and each needs its own connector, not a schema migration to add a value.
+  connectorType: varchar("connector_type", { length: 32 }).notNull().default("serverware"),
+  enabled: boolean("enabled").notNull().default(true),
+  config: json("config").$type<Record<string, unknown>>(),
+  credentialsEncrypted: text("credentials_encrypted"),
   lastSyncAt: timestamp("last_sync_at"),
   lastSyncOk: boolean("last_sync_ok"),
   lastSyncError: text("last_sync_error"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 /**
@@ -61,10 +75,10 @@ export const hosts = mysqlTable(
   "hosts",
   {
     id: int("id").autoincrement().primaryKey(),
-    clusterId: int("cluster_id")
+    sourceId: int("cluster_id")
       .notNull()
-      .references(() => clusters.id),
-    serverwareHostId: int("serverware_host_id").notNull(),
+      .references(() => sources.id),
+    sourceHostId: int("serverware_host_id").notNull(),
     uuid: varchar("uuid", { length: 64 }).notNull(),
     name: varchar("name", { length: 128 }).notNull(),
     purpose: varchar("purpose", { length: 32 }), // STORAGE | PROCESSING
@@ -79,9 +93,9 @@ export const hosts = mysqlTable(
     lastSyncedAt: timestamp("last_synced_at").notNull(),
   },
   (t) => ({
-    clusterHostUnique: uniqueIndex("hosts_cluster_serverware_id_uq").on(
-      t.clusterId,
-      t.serverwareHostId,
+    sourceHostUnique: uniqueIndex("hosts_cluster_serverware_id_uq").on(
+      t.sourceId,
+      t.sourceHostId,
     ),
   }),
 );
@@ -97,10 +111,10 @@ export const partitions = mysqlTable(
   "partitions",
   {
     id: int("id").autoincrement().primaryKey(),
-    clusterId: int("cluster_id")
+    sourceId: int("cluster_id")
       .notNull()
-      .references(() => clusters.id),
-    serverwarePartitionId: int("serverware_partition_id").notNull(),
+      .references(() => sources.id),
+    sourcePartitionId: int("serverware_partition_id").notNull(),
     name: varchar("name", { length: 128 }).notNull(),
     company: varchar("company", { length: 256 }),
     // Not a real link in practice - seen as a genuine URL, a literal "url"
@@ -118,9 +132,9 @@ export const partitions = mysqlTable(
     lastSyncedAt: timestamp("last_synced_at").notNull(),
   },
   (t) => ({
-    clusterPartitionUnique: uniqueIndex(
+    sourcePartitionUnique: uniqueIndex(
       "partitions_cluster_serverware_id_uq",
-    ).on(t.clusterId, t.serverwarePartitionId),
+    ).on(t.sourceId, t.sourcePartitionId),
     customerIdIdx: index("partitions_customer_id_idx").on(t.customerId),
   }),
 );
@@ -134,10 +148,10 @@ export const vpsInventory = mysqlTable(
   "vps_inventory",
   {
     id: int("id").autoincrement().primaryKey(),
-    clusterId: int("cluster_id")
+    sourceId: int("cluster_id")
       .notNull()
-      .references(() => clusters.id),
-    serverwareVpsId: int("serverware_vps_id").notNull(),
+      .references(() => sources.id),
+    sourceVpsId: int("serverware_vps_id").notNull(),
     uuid: varchar("uuid", { length: 64 }).notNull().unique(), // needed for *_stats routes
     hostId: int("host_id").references(() => hosts.id),
     partitionId: int("partition_id").references(() => partitions.id),
@@ -191,9 +205,9 @@ export const vpsInventory = mysqlTable(
     lastSyncedAt: timestamp("last_synced_at").notNull(),
   },
   (t) => ({
-    clusterVpsUnique: uniqueIndex("vps_inventory_cluster_serverware_id_uq").on(
-      t.clusterId,
-      t.serverwareVpsId,
+    sourceVpsUnique: uniqueIndex("vps_inventory_cluster_serverware_id_uq").on(
+      t.sourceId,
+      t.sourceVpsId,
     ),
     partitionIdx: index("vps_inventory_partition_idx").on(t.partitionId),
   }),
@@ -275,22 +289,22 @@ export const vpsEvents = mysqlTable(
 );
 
 export const hostsRelations = relations(hosts, ({ one, many }) => ({
-  cluster: one(clusters, { fields: [hosts.clusterId], references: [clusters.id] }),
+  source: one(sources, { fields: [hosts.sourceId], references: [sources.id] }),
   vpsInstances: many(vpsInventory),
 }));
 
 export const partitionsRelations = relations(partitions, ({ one, many }) => ({
-  cluster: one(clusters, {
-    fields: [partitions.clusterId],
-    references: [clusters.id],
+  source: one(sources, {
+    fields: [partitions.sourceId],
+    references: [sources.id],
   }),
   vpsInstances: many(vpsInventory),
 }));
 
 export const vpsInventoryRelations = relations(vpsInventory, ({ one, many }) => ({
-  cluster: one(clusters, {
-    fields: [vpsInventory.clusterId],
-    references: [clusters.id],
+  source: one(sources, {
+    fields: [vpsInventory.sourceId],
+    references: [sources.id],
   }),
   host: one(hosts, { fields: [vpsInventory.hostId], references: [hosts.id] }),
   partition: one(partitions, {

@@ -1,10 +1,10 @@
 import { Module } from "@nestjs/common";
+import { ConnectorsModule } from "../connectors/connectors.module";
 import { DatabaseModule } from "../db/database.module";
-import { ServerwareModule } from "../serverware/serverware.module";
 import { SyncService } from "./sync.service";
 
 @Module({
-  imports: [DatabaseModule, ServerwareModule],
+  imports: [DatabaseModule, ConnectorsModule],
   providers: [SyncService],
   exports: [SyncService],
 })

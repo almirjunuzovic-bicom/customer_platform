@@ -4,11 +4,13 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001
 
 export class UnauthorizedError extends Error {}
 
-export interface Cluster {
+export interface Source {
   id: number;
   key: string;
   name: string;
-  baseUrl: string;
+  connectorType: string;
+  enabled: boolean;
+  config: Record<string, unknown> | null;
   lastSyncAt: string | null;
   lastSyncOk: boolean | null;
   lastSyncError: string | null;
@@ -16,7 +18,7 @@ export interface Cluster {
 
 export interface Partition {
   id: number;
-  clusterId: number;
+  sourceId: number;
   name: string;
   company: string | null;
   customerId: string | null;
@@ -26,7 +28,7 @@ export interface Partition {
 
 export interface VpsInventory {
   id: number;
-  clusterId: number;
+  sourceId: number;
   hostId: number | null;
   partitionId: number | null;
   name: string;
@@ -87,7 +89,7 @@ export const api = {
     if (!res.ok) throw new UnauthorizedError(body.message ?? "Login failed");
     return body;
   },
-  clusters: () => request<Cluster[]>("/clusters"),
+  sources: () => request<Source[]>("/sources"),
   partitions: () => request<Partition[]>("/partitions"),
   vpsList: () => request<VpsInventory[]>("/vps"),
   vpsHistory: (id: number) => request<VpsMetricPoint[]>(`/vps/${id}/history`),

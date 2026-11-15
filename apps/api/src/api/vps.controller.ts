@@ -15,10 +15,11 @@ import { and, eq, gte, isNull, lt, lte, or } from "drizzle-orm";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { ConnectorRegistryService } from "../connectors/connector-registry.service";
+import { SourceUnavailableError } from "../connectors/connector.types";
+import { SourcesService } from "../connectors/sources.service";
 import { DATABASE, type Database } from "../db/database.module";
-import { clusters, vpsEvents, vpsInventory, vpsMetricsHistory } from "../db/schema";
-import { ServerwareService } from "../serverware/serverware.service";
-import { ServerwareUnavailableError } from "../serverware/serverware.errors";
+import { sources, vpsEvents, vpsInventory, vpsMetricsHistory } from "../db/schema";
 
 const VPS_ACTIONS = ["start", "stop", "restart"] as const;
 type VpsAction = (typeof VPS_ACTIONS)[number];
@@ -42,18 +43,19 @@ function parseIntParam(value: string, name: string): number {
 export class VpsController {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
-    @Inject(ServerwareService) private readonly serverware: ServerwareService,
+    @Inject(ConnectorRegistryService) private readonly connectorRegistry: ConnectorRegistryService,
+    @Inject(SourcesService) private readonly sourcesService: SourcesService,
   ) {}
 
   @Get()
   async list(
-    @Query("clusterId") clusterId?: string,
+    @Query("sourceId") sourceId?: string,
     @Query("partitionId") partitionId?: string,
     @Query("includeRemoved") includeRemoved?: string,
   ) {
     const conditions = [];
-    if (clusterId) {
-      conditions.push(eq(vpsInventory.clusterId, parseIntParam(clusterId, "clusterId")));
+    if (sourceId) {
+      conditions.push(eq(vpsInventory.sourceId, parseIntParam(sourceId, "sourceId")));
     }
     if (partitionId) {
       conditions.push(
@@ -124,7 +126,7 @@ export class VpsController {
   }
 
   /**
-   * Fires the action and returns immediately once SERVERware has accepted
+   * Fires the action and returns immediately once the source has accepted
    * it - this does NOT mean the VPS has actually changed state yet. Per
    * SERVERWARE_API.md §0 ("never assume state changed just because this
    * platform sent a call"), the real confirmation is the next poller tick
@@ -153,21 +155,21 @@ export class VpsController {
       throw new NotFoundException(`No VPS with id ${vpsId}`);
     }
 
-    const [cluster] = await this.db
-      .select({ key: clusters.key })
-      .from(clusters)
-      .where(eq(clusters.id, vps.clusterId))
+    const [sourceRow] = await this.db
+      .select({ id: sources.id })
+      .from(sources)
+      .where(eq(sources.id, vps.sourceId))
       .limit(1);
-    if (!cluster) {
-      throw new NotFoundException(`No cluster for VPS ${vpsId}`);
+    if (!sourceRow) {
+      throw new NotFoundException(`No source for VPS ${vpsId}`);
     }
 
-    // SERVERware's own guard: it 400s start/stop/restart while some OTHER
-    // task is in progress (confirmed live - see hst2171-serverware-api).
+    // The source's own guard: SERVERware 400s start/stop/restart while some
+    // OTHER task is in progress (confirmed live - see hst2171-serverware-api).
     // Check it ourselves first so we don't even make the call.
     if (vps.task) {
       throw new ConflictException(
-        `SERVERware operation already in progress on this VPS: ${vps.task}`,
+        `Operation already in progress on this VPS: ${vps.task}`,
       );
     }
 
@@ -204,22 +206,24 @@ export class VpsController {
     });
 
     try {
+      const resolved = await this.sourcesService.resolve(vps.sourceId);
+      const connector = this.connectorRegistry.get(resolved.connectorType);
       const typedAction = action as VpsAction;
       if (typedAction === "start") {
-        await this.serverware.startVps(cluster.key, vps.serverwareVpsId);
+        await connector.startVps(resolved, vps.sourceVpsId);
       } else if (typedAction === "stop") {
-        await this.serverware.stopVps(cluster.key, vps.serverwareVpsId);
+        await connector.stopVps(resolved, vps.sourceVpsId);
       } else {
-        await this.serverware.restartVps(cluster.key, vps.serverwareVpsId);
+        await connector.restartVps(resolved, vps.sourceVpsId);
       }
     } catch (error) {
-      // The call never actually landed on SERVERware's side - release our
+      // The call never actually landed on the source's side - release our
       // lock immediately instead of blocking retries for the full timeout.
       await this.db
         .update(vpsInventory)
         .set({ pendingAction: null, pendingActionAt: null })
         .where(eq(vpsInventory.id, vpsId));
-      if (error instanceof ServerwareUnavailableError) {
+      if (error instanceof SourceUnavailableError) {
         throw new BadGatewayException(error.message);
       }
       throw error;

@@ -1,5 +1,6 @@
 import { BullModule } from "@nestjs/bullmq";
 import { Module } from "@nestjs/common";
+import { ConnectorsModule } from "../connectors/connectors.module";
 import { SyncModule } from "../sync/sync.module";
 import { SYNC_QUEUE } from "./scheduling.constants";
 import { SchedulingService } from "./scheduling.service";
@@ -15,6 +16,7 @@ import { SyncProcessor } from "./sync.processor";
       },
     }),
     BullModule.registerQueue({ name: SYNC_QUEUE }),
+    ConnectorsModule,
     SyncModule,
   ],
   providers: [SchedulingService, SyncProcessor],
