@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { Server } from "lucide-react";
 import { api, type Host, type Partition, type Source, type VpsInventory } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,7 +35,10 @@ function SourceCard({
       <Card className="h-full transition-colors hover:border-foreground/20">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>{source.name}</CardTitle>
+            <div className="flex items-center gap-2">
+              <Server className="size-4 text-muted-foreground" />
+              <CardTitle>{source.name}</CardTitle>
+            </div>
             <Badge variant={source.enabled ? "secondary" : "destructive"}>
               {source.enabled ? source.connectorType : "disabled"}
             </Badge>
