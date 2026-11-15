@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import {
   CartesianGrid,
-  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -40,6 +39,56 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="flex items-center justify-between border-b py-1.5 text-sm last:border-b-0">
       <span className="text-muted-foreground">{label}</span>
       <span className="font-medium">{value}</span>
+    </div>
+  );
+}
+
+function MetricChart({
+  title,
+  dataKey,
+  color,
+  data,
+}: {
+  title: string;
+  dataKey: string;
+  color: string;
+  data: Array<Record<string, string | number | null>>;
+}) {
+  return (
+    <div>
+      {/* Single series - no legend box needed, the title already names it. */}
+      <p className="mb-2 text-sm font-medium">{title}</p>
+      <ResponsiveContainer width="100%" height={200}>
+        <LineChart data={data} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+          <XAxis
+            dataKey="time"
+            stroke="var(--muted-foreground)"
+            fontSize={11}
+            tickLine={false}
+            axisLine={{ stroke: "var(--border)" }}
+            minTickGap={24}
+          />
+          <YAxis
+            stroke="var(--muted-foreground)"
+            fontSize={11}
+            tickLine={false}
+            axisLine={{ stroke: "var(--border)" }}
+            width={32}
+            domain={[0, 100]}
+          />
+          <Tooltip
+            contentStyle={{
+              backgroundColor: "var(--popover)",
+              borderColor: "var(--border)",
+              borderRadius: "var(--radius-md)",
+              fontSize: 12,
+            }}
+            formatter={(value) => [`${value}%`, title]}
+          />
+          <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -179,55 +228,21 @@ export function VpsDetail() {
             <p className="text-sm text-muted-foreground">No history yet.</p>
           )}
           {chartData.length > 0 && (
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={chartData} margin={{ left: 0, right: 16, top: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis
-                  dataKey="time"
-                  stroke="var(--muted-foreground)"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={{ stroke: "var(--border)" }}
-                />
-                <YAxis
-                  stroke="var(--muted-foreground)"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={{ stroke: "var(--border)" }}
-                  width={32}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "var(--popover)",
-                    borderColor: "var(--border)",
-                    borderRadius: "var(--radius-md)",
-                    fontSize: 12,
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Line
-                  type="monotone"
-                  dataKey="CPU %"
-                  stroke="var(--chart-1)"
-                  strokeWidth={2}
-                  dot={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="Memory %"
-                  stroke="var(--chart-2)"
-                  strokeWidth={2}
-                  dot={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="Disk %"
-                  stroke="var(--chart-3)"
-                  strokeWidth={2}
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+              <MetricChart title="CPU" dataKey="CPU %" color="var(--chart-1)" data={chartData} />
+              <MetricChart
+                title="Memory"
+                dataKey="Memory %"
+                color="var(--chart-2)"
+                data={chartData}
+              />
+              <MetricChart
+                title="Storage"
+                dataKey="Disk %"
+                color="var(--chart-3)"
+                data={chartData}
+              />
+            </div>
           )}
         </CardContent>
       </Card>
