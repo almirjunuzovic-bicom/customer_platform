@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { api, UnauthorizedError, type VpsInventory } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
@@ -13,33 +14,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { StateBadge } from "@/components/StateBadge";
 import { VpsActions } from "@/components/VpsActions";
-
-function StateBadge({ state, task }: { state: string | null; task: string | null }) {
-  const badge =
-    state === "RUNNING" ? (
-      <Badge>RUNNING</Badge>
-    ) : state === "STOPPED" ? (
-      <Badge variant="outline">STOPPED</Badge>
-    ) : (
-      <Badge variant="destructive">{state ?? "UNKNOWN"}</Badge>
-    );
-  return (
-    <div className="flex items-center gap-1.5">
-      {badge}
-      {task && (
-        <Badge variant="secondary" title={`SERVERware task: ${task}`}>
-          {task}
-        </Badge>
-      )}
-    </div>
-  );
-}
 
 function VpsRow({ vps }: { vps: VpsInventory }) {
   return (
     <TableRow>
-      <TableCell className="font-medium">{vps.name}</TableCell>
+      <TableCell className="font-medium">
+        <Link
+          to="/vps/$vpsId"
+          params={{ vpsId: String(vps.id) }}
+          className="hover:underline"
+        >
+          {vps.name}
+        </Link>
+      </TableCell>
       <TableCell>
         <StateBadge state={vps.lastKnownState} task={vps.task} />
       </TableCell>

@@ -29,21 +29,65 @@ export interface Partition {
 export interface VpsInventory {
   id: number;
   sourceId: number;
+  sourceVpsId: number;
+  uuid: string;
   hostId: number | null;
   partitionId: number | null;
   name: string;
   engine: string | null;
   sourcePlatform: string;
   lastKnownState: string | null;
+  lastUptimeSeconds: number | null;
   task: string | null; // SERVERware's own "other operation in progress" marker
   pendingAction: string | null; // our own start/stop/restart lock
   pendingActionAt: string | null;
   pbxwareVersion: string | null;
   memLimit: number | null;
   cpuLimit: number | null;
+  cpuShare: number | null;
+  ioLimit: number | null;
+  diskState: string | null;
   ipAddresses: string[] | null;
+  collectMetrics: boolean;
   isRemoved: boolean;
   lastSyncedAt: string;
+}
+
+export interface Host {
+  id: number;
+  sourceId: number;
+  sourceHostId: number;
+  uuid: string;
+  name: string;
+  purpose: string | null;
+  state: string | null;
+  online: boolean | null;
+  connected: boolean | null;
+  cpuUsage: number | null;
+  memUsage: number | null;
+  memTotal: number | null;
+  vpsCount: number | null;
+  vpsRunning: number | null;
+}
+
+export type VpsEventType =
+  | "state_changed"
+  | "host_changed"
+  | "partition_changed"
+  | "resource_changed"
+  | "created"
+  | "removed"
+  | "action_requested";
+
+export interface VpsEvent {
+  id: number;
+  vpsInventoryId: number;
+  eventType: VpsEventType;
+  previousValue: string | null;
+  newValue: string | null;
+  detectedAt: string;
+  source: "poll_detected" | "platform_action";
+  actorUserId: number | null;
 }
 
 export interface VpsMetricPoint {
@@ -117,8 +161,11 @@ export const api = {
   restartWorker: () =>
     request<{ status: string; service: string }>("/ops/restart-worker", "POST"),
   partitions: () => request<Partition[]>("/partitions"),
+  hosts: () => request<Host[]>("/hosts"),
   vpsList: () => request<VpsInventory[]>("/vps"),
+  vpsGet: (id: number) => request<VpsInventory>(`/vps/${id}`),
   vpsHistory: (id: number) => request<VpsMetricPoint[]>(`/vps/${id}/history`),
+  vpsEvents: (id: number) => request<VpsEvent[]>(`/vps/${id}/events`),
   vpsAction: (id: number, action: VpsAction) =>
     request<{ status: string; action: string; vpsId: number }>(
       `/vps/${id}/actions/${action}`,
