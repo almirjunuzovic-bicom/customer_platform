@@ -103,6 +103,14 @@ export interface HistorySummary {
   diskUsage: MetricSummary;
 }
 
+export interface CallStats {
+  currentHour: number;
+  today: number;
+  yesterday: number;
+  currentWeek: number;
+  currentMonth: number;
+}
+
 export interface VpsMetricPoint {
   capturedAt: string;
   state: string;
@@ -169,6 +177,7 @@ export const api = {
   createSource: (input: CreateSourceInput) => request<Source>("/sources", "POST", input),
   setSourceEnabled: (id: number, enabled: boolean) =>
     request<Source>(`/sources/${id}`, "PATCH", { enabled }),
+  callStats: (sourceId: number) => request<CallStats>(`/sources/${sourceId}/call-stats`),
   workerStatus: () =>
     request<{ service: string; active: boolean; state?: string }>("/ops/worker-status"),
   restartWorker: () =>

@@ -1,4 +1,5 @@
 import type {
+  CallStats,
   ConnectorType,
   ResolvedSource,
   SourceConnector,
@@ -40,6 +41,10 @@ export class UnsupportedConnector implements SourceConnector {
   }
 
   async restartVps(source: ResolvedSource): Promise<void> {
+    throw this.notImplemented(source);
+  }
+
+  async getCallStats(source: ResolvedSource): Promise<CallStats> {
     throw this.notImplemented(source);
   }
 

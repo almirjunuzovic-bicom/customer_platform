@@ -119,6 +119,38 @@ export interface ServerwarePartition {
   vpsUsage: number;
 }
 
+/**
+ * Network/cluster-wide call volume - confirmed live against the lon1 test
+ * cluster (see hst2171-serverware-api): GET /api/networks/:netid/dashboard/
+ * vps-call-stats. No per-VPS breakdown exists in sw-wcp's own code
+ * (SUM(num_of_calls) with no vps_id filter anywhere it's read).
+ */
+export interface ServerwareCallStatsRaw {
+  current_hour: number;
+  today: number;
+  yesterday: number;
+  current_week: number;
+  current_month: number;
+}
+
+export interface ServerwareCallStats {
+  currentHour: number;
+  today: number;
+  yesterday: number;
+  currentWeek: number;
+  currentMonth: number;
+}
+
+export function mapCallStats(raw: ServerwareCallStatsRaw): ServerwareCallStats {
+  return {
+    currentHour: raw.current_hour,
+    today: raw.today,
+    yesterday: raw.yesterday,
+    currentWeek: raw.current_week,
+    currentMonth: raw.current_month,
+  };
+}
+
 export function mapHost(raw: ServerwareHostRaw): ServerwareHost {
   return {
     serverwareHostId: raw.id,

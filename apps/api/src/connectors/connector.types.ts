@@ -48,6 +48,19 @@ export interface SourceVps {
   uptimeSeconds: number;
 }
 
+/** Network/cluster-wide call volume - not per-VPS (confirmed live: SERVERware's
+ * own dashboard endpoint only exposes a network-wide sum, see
+ * hst2171-serverware-api). ServerWare/PBXware-specific concept - a
+ * connector that doesn't have one throws via SourceUnavailableError same as
+ * any other unsupported call. */
+export interface CallStats {
+  currentHour: number;
+  today: number;
+  yesterday: number;
+  currentWeek: number;
+  currentMonth: number;
+}
+
 export interface SourcePartition {
   sourcePartitionId: number;
   uuid: string;
@@ -94,4 +107,5 @@ export interface SourceConnector {
   startVps(source: ResolvedSource, sourceVpsId: number): Promise<void>;
   stopVps(source: ResolvedSource, sourceVpsId: number): Promise<void>;
   restartVps(source: ResolvedSource, sourceVpsId: number): Promise<void>;
+  getCallStats(source: ResolvedSource): Promise<CallStats>;
 }

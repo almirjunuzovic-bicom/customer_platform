@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2, Phone, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +27,15 @@ export function SourceDetail() {
   });
   const hostsQuery = useQuery({ queryKey: ["hosts"], queryFn: api.hosts, refetchInterval: 10_000 });
   const partitionsQuery = useQuery({ queryKey: ["partitions"], queryFn: api.partitions });
+  // Network-wide, not per-VPS (see connector.types.ts CallStats) - ServerWare/
+  // PBXware-specific, so a non-serverware source will 502 here; that's
+  // expected, not a bug, see the isError branch below.
+  const callStatsQuery = useQuery({
+    queryKey: ["sources", id, "call-stats"],
+    queryFn: () => api.callStats(id),
+    refetchInterval: 10_000,
+    retry: false,
+  });
 
   const source = sourcesQuery.data?.find((s) => s.id === id);
   const hosts = (hostsQuery.data ?? []).filter((h) => h.sourceId === id);
@@ -61,6 +70,55 @@ export function SourceDetail() {
         </Badge>
         <SyncStatus source={source} />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-1.5">
+            <Phone className="size-4 text-muted-foreground" />
+            Calls
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {callStatsQuery.isLoading && <Skeleton className="h-12 w-full" />}
+          {callStatsQuery.isError && (
+            <p className="text-sm text-muted-foreground">
+              Not available for this connector.
+            </p>
+          )}
+          {callStatsQuery.data && (
+            <div className="grid grid-cols-5 gap-2">
+              <div className="text-center">
+                <p className="text-lg font-semibold tabular-nums">
+                  {callStatsQuery.data.currentHour}
+                </p>
+                <p className="text-xs text-muted-foreground">This hour</p>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-semibold tabular-nums">{callStatsQuery.data.today}</p>
+                <p className="text-xs text-muted-foreground">Today</p>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-semibold tabular-nums">
+                  {callStatsQuery.data.yesterday}
+                </p>
+                <p className="text-xs text-muted-foreground">Yesterday</p>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-semibold tabular-nums">
+                  {callStatsQuery.data.currentWeek}
+                </p>
+                <p className="text-xs text-muted-foreground">This week</p>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-semibold tabular-nums">
+                  {callStatsQuery.data.currentMonth}
+                </p>
+                <p className="text-xs text-muted-foreground">This month</p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

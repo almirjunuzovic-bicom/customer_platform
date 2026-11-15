@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   Body,
   Controller,
@@ -9,7 +10,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { CONNECTOR_TYPES, type ConnectorType } from "./connector.types";
+import { ConnectorRegistryService } from "./connector-registry.service";
+import { CONNECTOR_TYPES, SourceUnavailableError, type ConnectorType } from "./connector.types";
 import { SourcesService } from "./sources.service";
 
 interface CreateSourceBody {
@@ -49,11 +51,34 @@ function assertConnectorType(value: string | undefined): ConnectorType {
 @Controller("sources")
 @UseGuards(JwtAuthGuard)
 export class SourcesController {
-  constructor(private readonly sourcesService: SourcesService) {}
+  constructor(
+    private readonly sourcesService: SourcesService,
+    private readonly connectorRegistry: ConnectorRegistryService,
+  ) {}
 
   @Get()
   async list() {
     return this.sourcesService.list();
+  }
+
+  /**
+   * Network-wide call volume (current_hour/today/yesterday/week/month) -
+   * not per-VPS, see connector.types.ts CallStats. ServerWare/PBXware-
+   * specific; connectors that don't have this throw, mapped to 502 here
+   * same as any other "can't reach/support this right now" case.
+   */
+  @Get(":id/call-stats")
+  async callStats(@Param("id") id: string) {
+    try {
+      const resolved = await this.sourcesService.resolve(parseIdParam(id));
+      const connector = this.connectorRegistry.get(resolved.connectorType);
+      return await connector.getCallStats(resolved);
+    } catch (error) {
+      if (error instanceof SourceUnavailableError) {
+        throw new BadGatewayException(error.message);
+      }
+      throw error;
+    }
   }
 
   @Post()

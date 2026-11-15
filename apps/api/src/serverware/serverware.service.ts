@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { withRetry } from "../common/retry";
 import {
   SourceUnavailableError,
+  type CallStats,
   type ConnectorType,
   type ResolvedSource,
   type SourceConnector,
@@ -10,9 +11,11 @@ import {
   type SourceVps,
 } from "../connectors/connector.types";
 import {
+  mapCallStats,
   mapHost,
   mapPartition,
   mapVps,
+  type ServerwareCallStatsRaw,
   type ServerwareEnvelope,
   type ServerwareHost,
   type ServerwareHostRaw,
@@ -144,6 +147,16 @@ export class ServerwareService implements SourceConnector {
       `/api/networks/${config.netId}/partitions`,
     );
     return raw.map(mapPartition).map(toSourcePartition);
+  }
+
+  async getCallStats(source: ResolvedSource): Promise<CallStats> {
+    const config = readConfig(source);
+    const raw = await this.request<ServerwareCallStatsRaw>(
+      source,
+      config,
+      `/api/networks/${config.netId}/dashboard/vps-call-stats`,
+    );
+    return mapCallStats(raw);
   }
 
   /**
