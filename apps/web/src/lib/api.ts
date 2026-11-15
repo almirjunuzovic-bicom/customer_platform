@@ -56,22 +56,41 @@ export interface VpsMetricPoint {
   uptimeSeconds: number | null;
 }
 
-async function request<T>(path: string, method: "GET" | "POST" = "GET"): Promise<T> {
+async function request<T>(
+  path: string,
+  method: "GET" | "POST" | "PATCH" = "GET",
+  body?: unknown,
+): Promise<T> {
   const token = getToken();
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const message = body.message ?? `Request to ${path} failed (${res.status})`;
+    const responseBody = await res.json().catch(() => ({}));
+    const message = responseBody.message ?? `Request to ${path} failed (${res.status})`;
     if (res.status === 401) throw new UnauthorizedError(message);
-    throw new Error(message);
+    throw new Error(Array.isArray(message) ? message.join(", ") : message);
   }
   return res.json();
 }
 
 export type VpsAction = "start" | "stop" | "restart";
+
+export const CONNECTOR_TYPES = ["serverware", "aws", "proxmox"] as const;
+export type ConnectorType = (typeof CONNECTOR_TYPES)[number];
+
+export interface CreateSourceInput {
+  key: string;
+  name: string;
+  connectorType: ConnectorType;
+  config: Record<string, unknown>;
+  credentials: Record<string, unknown>;
+}
 
 export interface LoginResponse {
   token: string;
@@ -90,6 +109,9 @@ export const api = {
     return body;
   },
   sources: () => request<Source[]>("/sources"),
+  createSource: (input: CreateSourceInput) => request<Source>("/sources", "POST", input),
+  setSourceEnabled: (id: number, enabled: boolean) =>
+    request<Source>(`/sources/${id}`, "PATCH", { enabled }),
   partitions: () => request<Partition[]>("/partitions"),
   vpsList: () => request<VpsInventory[]>("/vps"),
   vpsHistory: (id: number) => request<VpsMetricPoint[]>(`/vps/${id}/history`),

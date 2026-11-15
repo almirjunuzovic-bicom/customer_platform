@@ -1,10 +1,16 @@
+import { useState } from "react";
 import { Login } from "@/components/Login";
+import { SourcesAdmin } from "@/components/SourcesAdmin";
 import { VpsList } from "@/components/VpsList";
 import { Button } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/sonner";
 import { useAuth } from "@/lib/auth-context";
+
+type View = "vps" | "sources";
 
 function App() {
   const { isAuthenticated, user, logout } = useAuth();
+  const [view, setView] = useState<View>("vps");
 
   if (!isAuthenticated) {
     return <Login />;
@@ -22,8 +28,20 @@ function App() {
             </Button>
           </div>
         </div>
-        <VpsList />
+        <div className="flex gap-2">
+          <Button variant={view === "vps" ? "default" : "outline"} onClick={() => setView("vps")}>
+            VPS
+          </Button>
+          <Button
+            variant={view === "sources" ? "default" : "outline"}
+            onClick={() => setView("sources")}
+          >
+            Sources
+          </Button>
+        </div>
+        {view === "vps" ? <VpsList /> : <SourcesAdmin />}
       </div>
+      <Toaster />
     </div>
   );
 }
