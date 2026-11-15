@@ -227,14 +227,23 @@ doing it the other way:
 
 ## 10. Git workflow
 
-- Trunk-based: `main` is the protected branch, all work happens on a
-  short-lived branch off it.
+**This is enforced by agreement, not by GitHub.** GitHub only enforces
+branch protection / rulesets on private repos for paid (Pro/Team/
+Enterprise) plans - this repo is on a free personal account, so nothing
+technically stops a direct push to `main`. Decided to rely on everyone
+actually following this instead of paying for a plan upgrade on a repo
+that's a temporary stand-in anyway (until Bicom's internal Git is ready).
+That makes it more important you actually follow it, not less:
+
+- Trunk-based: `main` is the shared branch everyone builds on, all work
+  happens on a short-lived branch off it.
 - `git checkout -b feature/<short-description>`
 - Commit as you go, with messages that explain *why*, not just *what*.
 - `git push -u origin feature/<short-description>`
 - Open a Pull Request on GitHub targeting `main`. Add Almir as a reviewer.
-- Wait for review/approval before merging - don't merge your own PR, even
-  if GitHub lets you.
+- **Never push or merge directly to `main`**, even though GitHub will
+  technically let you - wait for review/approval, and don't merge your
+  own PR.
 - Keep PRs scoped to one thing. A PR that does five unrelated things is
   much slower to review than five small ones.
 
