@@ -77,10 +77,21 @@ export class SourcesService {
     return this.getByIdOrThrow(id);
   }
 
-  /** Decrypts credentials - internal use only (connectors + sync), never exposed over the API. */
+  /**
+   * Decrypts credentials - internal use only (connectors + sync), never
+   * exposed over the API. The ONE chokepoint every caller that talks to a
+   * real source goes through (SyncService AND VpsController's start/stop/
+   * restart) - so the `enabled` check belongs here, not duplicated in each
+   * caller. Confirmed live this was missing: disabling lon1 still let a
+   * VPS start action fire for real against SERVERware, because
+   * VpsController had no enabled check of its own and relied on nothing.
+   */
   async resolve(id: number): Promise<ResolvedSource> {
     const [row] = await this.db.select().from(sources).where(eq(sources.id, id)).limit(1);
     if (!row) throw new NotFoundException(`No source with id ${id}`);
+    if (!row.enabled) {
+      throw new SourceUnavailableError(row.key, "source is disabled");
+    }
     if (!row.config || !row.credentialsEncrypted) {
       throw new SourceUnavailableError(row.key, "source has no config/credentials set yet");
     }
