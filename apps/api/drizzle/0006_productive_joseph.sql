@@ -1,0 +1,1 @@
+ALTER TABLE `vps_inventory` ADD `source_platform` varchar(32) DEFAULT 'serverware' NOT NULL;

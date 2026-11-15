@@ -31,6 +31,7 @@ export interface VpsInventory {
   partitionId: number | null;
   name: string;
   engine: string | null;
+  sourcePlatform: string;
   lastKnownState: string | null;
   task: string | null; // SERVERware's own "other operation in progress" marker
   pendingAction: string | null; // our own start/stop/restart lock

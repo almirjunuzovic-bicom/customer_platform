@@ -236,6 +236,7 @@ export class SyncService {
           partitionId,
           name: vps.name,
           engine: vps.engine,
+          sourcePlatform: "serverware",
           lastKnownState: vps.state,
           lastUptimeSeconds: vps.uptimeSeconds,
           task: vps.task || null,

@@ -43,6 +43,13 @@
       "when": 1794726989727,
       "tag": "0005_lush_tyrannus",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1794727531442,
+      "tag": "0006_productive_joseph",
+      "breakpoints": true
     }
   ]
 }

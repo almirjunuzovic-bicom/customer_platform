@@ -44,6 +44,10 @@ function VpsRow({ vps }: { vps: VpsInventory }) {
         <StateBadge state={vps.lastKnownState} task={vps.task} />
       </TableCell>
       <TableCell>{vps.engine ?? "—"}</TableCell>
+      <TableCell>
+        {/* Internal/admin-only - never show this once a customer-facing view exists */}
+        <Badge variant="secondary">{vps.sourcePlatform}</Badge>
+      </TableCell>
       <TableCell>{vps.memLimit ? `${vps.memLimit} MB` : "—"}</TableCell>
       <TableCell>{vps.cpuLimit || "—"}</TableCell>
       <TableCell className="text-muted-foreground">
@@ -100,6 +104,7 @@ export function VpsList() {
                 <TableHead>Name</TableHead>
                 <TableHead>State</TableHead>
                 <TableHead>Engine</TableHead>
+                <TableHead>Platform</TableHead>
                 <TableHead>Memory</TableHead>
                 <TableHead>CPU</TableHead>
                 <TableHead>IP Addresses</TableHead>

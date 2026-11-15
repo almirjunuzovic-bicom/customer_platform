@@ -143,6 +143,15 @@ export const vpsInventory = mysqlTable(
     partitionId: int("partition_id").references(() => partitions.id),
     name: varchar("name", { length: 128 }).notNull(),
     engine: varchar("engine", { length: 16 }), // kvm | lxc
+    // Which underlying infra provider this VPS actually lives on - plain
+    // varchar (not an enum) since the known set will grow ("serverware" for
+    // everything today, "aws"/"proxmox" planned later) and each needs its
+    // own sync adapter, not a schema migration to add a value. Internal/
+    // admin-only - customers should never see or care which platform
+    // backs their VPS. Set once at insert, never changes on update: a VPS
+    // moving providers is a new row via a different adapter, not an
+    // in-place update of this one.
+    sourcePlatform: varchar("source_platform", { length: 32 }).notNull().default("serverware"),
     // Cache of the most recent state seen, kept in lockstep with every poll.
     // Lets the dashboard read current status without touching the (much
     // bigger) history table, and lets the poller detect transitions without
