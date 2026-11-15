@@ -14,7 +14,12 @@ RestartSec=5
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
-NoNewPrivileges=true
+# NoNewPrivileges intentionally NOT set here (unlike the worker service) -
+# OpsController shells out to `sudo systemctl restart ...` (see ops/
+# ops.controller.ts), and NoNewPrivileges blocks any setuid escalation
+# (sudo is setuid root), no exceptions. `almir` already has passwordless
+# root sudo on this VM regardless, so this isn't opening a new privilege
+# boundary, just letting this one process use the one it already has.
 PrivateTmp=true
 
 [Install]

@@ -48,6 +48,13 @@ export class SyncService {
       // source) - a real bug/race, don't hide it as a sync failure.
       throw new Error(`No source with id ${sourceId}`);
     }
+    if (!sourceRow.enabled) {
+      // Defense in depth, not the primary mechanism - SchedulingService is
+      // supposed to remove this source's scheduler on worker boot so this
+      // job shouldn't even fire, but a stale/in-flight job landing here
+      // anyway must still not touch a disabled source's data.
+      return { sourceKey: sourceRow.key, ok: true, hostsCount: 0, vpsesCount: 0, partitionsCount: 0 };
+    }
 
     try {
       const resolved = await this.sourcesService.resolve(sourceId);
