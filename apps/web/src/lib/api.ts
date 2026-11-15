@@ -112,6 +112,10 @@ export const api = {
   createSource: (input: CreateSourceInput) => request<Source>("/sources", "POST", input),
   setSourceEnabled: (id: number, enabled: boolean) =>
     request<Source>(`/sources/${id}`, "PATCH", { enabled }),
+  workerStatus: () =>
+    request<{ service: string; active: boolean; state?: string }>("/ops/worker-status"),
+  restartWorker: () =>
+    request<{ status: string; service: string }>("/ops/restart-worker", "POST"),
   partitions: () => request<Partition[]>("/partitions"),
   vpsList: () => request<VpsInventory[]>("/vps"),
   vpsHistory: (id: number) => request<VpsMetricPoint[]>(`/vps/${id}/history`),

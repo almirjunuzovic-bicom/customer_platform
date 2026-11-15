@@ -8,6 +8,17 @@ import {
   type CreateSourceInput,
   type Source,
 } from "@/lib/api";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -261,6 +272,66 @@ function AddSourceForm({ onDone }: { onDone: () => void }) {
   );
 }
 
+function RestartWorkerButton() {
+  const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const status = useQuery({
+    queryKey: ["worker-status"],
+    queryFn: api.workerStatus,
+    refetchInterval: 15_000,
+  });
+  const mutation = useMutation({
+    mutationFn: api.restartWorker,
+    onSuccess: () => {
+      // The new process takes a moment to come up - a refetch right away
+      // would likely still show the old one, so give it a beat.
+      setTimeout(() => queryClient.invalidateQueries({ queryKey: ["worker-status"] }), 3000);
+      toast.success("Worker restarted", { description: "Picking up any source changes now." });
+      setOpen(false);
+    },
+    onError: (error) => toast.error((error as Error).message),
+  });
+
+  return (
+    <div className="flex items-center gap-2">
+      {status.data && (
+        <Badge variant={status.data.active ? "secondary" : "destructive"}>
+          worker: {status.data.active ? "active" : (status.data.state ?? "inactive")}
+        </Badge>
+      )}
+      <AlertDialog
+        open={open}
+        onOpenChange={(next) => {
+          if (mutation.isPending) return;
+          if (next) mutation.reset();
+          setOpen(next);
+        }}
+      >
+        <AlertDialogTrigger render={<Button variant="outline">Restart worker</Button>} />
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restart the sync worker?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Needed to pick up any source you just added, enabled, or disabled - the
+              scheduler is only set up once at boot. Syncing pauses for a few seconds
+              while it comes back up.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {mutation.isError && (
+            <p className="text-sm text-destructive">{(mutation.error as Error).message}</p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={mutation.isPending} onClick={() => mutation.mutate()}>
+              {mutation.isPending ? "Restarting..." : "Yes, restart"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
 function AddSourceDialog() {
   const [open, setOpen] = useState(false);
   return (
@@ -290,7 +361,10 @@ export function SourcesAdmin() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Sources</CardTitle>
-        <AddSourceDialog />
+        <div className="flex items-center gap-2">
+          <RestartWorkerButton />
+          <AddSourceDialog />
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading && (
