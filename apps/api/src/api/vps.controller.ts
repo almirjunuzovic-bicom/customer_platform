@@ -6,8 +6,10 @@ import {
   NotFoundException,
   Param,
   Query,
+  UseGuards,
 } from "@nestjs/common";
 import { and, eq, gte, lte } from "drizzle-orm";
+import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { DATABASE, type Database } from "../db/database.module";
 import { vpsEvents, vpsInventory, vpsMetricsHistory } from "../db/schema";
 
@@ -20,6 +22,7 @@ function parseIntParam(value: string, name: string): number {
 }
 
 @Controller("vps")
+@UseGuards(JwtAuthGuard)
 export class VpsController {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 

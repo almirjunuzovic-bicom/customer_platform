@@ -15,6 +15,24 @@ import {
 import { relations } from "drizzle-orm";
 
 /**
+ * Internal Bicom staff only (Hosting Team) - NOT partner/customer users,
+ * that's a separate, deferred concern (see hst2171-architecture open
+ * question #1). Simple email+password for now, explicitly temporary: will
+ * be swapped for Google Workspace SSO later. Keyed on email on purpose -
+ * SSO would key off email too, so this stays a clean swap: the rest of the
+ * app only ever deals with a resolved `userId`, never with how login
+ * happened.
+ */
+export const users = mysqlTable("users", {
+  id: int("id").autoincrement().primaryKey(),
+  email: varchar("email", { length: 256 }).notNull().unique(),
+  name: varchar("name", { length: 128 }).notNull(),
+  passwordHash: varchar("password_hash", { length: 256 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  lastLoginAt: timestamp("last_login_at"),
+});
+
+/**
  * One row per SERVERware cluster (lon1, cork1, ...). Base URL + static
  * metadata only - the API token lives in env vars, never in this table.
  */
@@ -207,10 +225,9 @@ export const vpsEvents = mysqlTable(
     newValue: varchar("new_value", { length: 256 }),
     detectedAt: timestamp("detected_at").notNull(),
     source: vpsEventSourceEnum.notNull(),
-    // Nullable, no FK yet - the users table doesn't exist until auth is
-    // decided (hst2171-architecture open question #1). Add the FK
-    // constraint in a later migration once it does.
-    actorUserId: int("actor_user_id"),
+    // NULL for poll_detected events (nobody to attribute); set for
+    // platform_action events once the actor is a real logged-in user.
+    actorUserId: int("actor_user_id").references(() => users.id),
     metadata: json("metadata"),
   },
   (t) => ({
