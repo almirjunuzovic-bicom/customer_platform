@@ -93,25 +93,32 @@ export class SourcesService {
    * resurrect any of this.
    */
   async delete(id: number): Promise<{ key: string }> {
-    const [row] = await this.db.select({ key: sources.key }).from(sources).where(eq(sources.id, id)).limit(1);
-    if (!row) throw new NotFoundException(`No source with id ${id}`);
+    // All 7 deletes in one transaction - previously separate statements,
+    // which a mid-sequence failure (or the worker's own sync running
+    // concurrently against the same source) could leave half-applied,
+    // exactly the kind of partial-orphan state this whole mechanism exists
+    // to avoid (see hst2171-architecture).
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.select({ key: sources.key }).from(sources).where(eq(sources.id, id)).limit(1);
+      if (!row) throw new NotFoundException(`No source with id ${id}`);
 
-    const vpsRows = await this.db
-      .select({ id: vpsInventory.id })
-      .from(vpsInventory)
-      .where(eq(vpsInventory.sourceId, id));
-    const vpsIds = vpsRows.map((r) => r.id);
+      const vpsRows = await tx
+        .select({ id: vpsInventory.id })
+        .from(vpsInventory)
+        .where(eq(vpsInventory.sourceId, id));
+      const vpsIds = vpsRows.map((r) => r.id);
 
-    if (vpsIds.length > 0) {
-      await this.db.delete(vpsMetricsHistory).where(inArray(vpsMetricsHistory.vpsInventoryId, vpsIds));
-      await this.db.delete(vpsEvents).where(inArray(vpsEvents.vpsInventoryId, vpsIds));
-    }
-    await this.db.delete(vpsInventory).where(eq(vpsInventory.sourceId, id));
-    await this.db.delete(hosts).where(eq(hosts.sourceId, id));
-    await this.db.delete(partitions).where(eq(partitions.sourceId, id));
-    await this.db.delete(sources).where(eq(sources.id, id));
+      if (vpsIds.length > 0) {
+        await tx.delete(vpsMetricsHistory).where(inArray(vpsMetricsHistory.vpsInventoryId, vpsIds));
+        await tx.delete(vpsEvents).where(inArray(vpsEvents.vpsInventoryId, vpsIds));
+      }
+      await tx.delete(vpsInventory).where(eq(vpsInventory.sourceId, id));
+      await tx.delete(hosts).where(eq(hosts.sourceId, id));
+      await tx.delete(partitions).where(eq(partitions.sourceId, id));
+      await tx.delete(sources).where(eq(sources.id, id));
 
-    return { key: row.key };
+      return { key: row.key };
+    });
   }
 
   /**

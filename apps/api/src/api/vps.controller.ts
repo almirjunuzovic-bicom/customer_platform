@@ -30,6 +30,12 @@ type VpsAction = (typeof VPS_ACTIONS)[number];
 // the operation in flight.
 const PENDING_ACTION_TIMEOUT_MS = 120_000;
 
+// Safety cap on the unbucketed /history path - without it, a call with no
+// bucketSeconds and a wide/missing range could return every row ever
+// recorded for a VPS (confirmed as a real risk in code review, not
+// hypothetical: nothing previously stopped this).
+const MAX_RAW_HISTORY_ROWS = 10_000;
+
 function parseIntParam(value: string, name: string): number {
   const n = Number(value);
   if (!Number.isInteger(n)) {
@@ -117,11 +123,17 @@ export class VpsController {
     if (to) conditions.push(lte(vpsMetricsHistory.capturedAt, parseDateParam(to, "to")));
 
     if (!bucketSeconds) {
-      return this.db
+      // Most-recent-N, not oldest-N - a plain ascending LIMIT would cut off
+      // the newest data instead of the oldest, which is backwards for a
+      // monitoring chart. Capped regardless of from/to, not just when both
+      // are missing - a wide explicit range is the same risk.
+      const rows = await this.db
         .select()
         .from(vpsMetricsHistory)
         .where(and(...conditions))
-        .orderBy(vpsMetricsHistory.capturedAt);
+        .orderBy(desc(vpsMetricsHistory.capturedAt))
+        .limit(MAX_RAW_HISTORY_ROWS);
+      return rows.reverse();
     }
 
     const bucketSecondsNum = parseIntParam(bucketSeconds, "bucketSeconds");

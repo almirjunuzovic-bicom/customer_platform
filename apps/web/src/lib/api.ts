@@ -1,4 +1,4 @@
-import { getToken } from "./token";
+import { getToken, notifyUnauthorized } from "./token";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001";
 
@@ -151,7 +151,10 @@ async function request<T>(
   if (!res.ok) {
     const responseBody = await res.json().catch(() => ({}));
     const message = responseBody.message ?? `Request to ${path} failed (${res.status})`;
-    if (res.status === 401) throw new UnauthorizedError(message);
+    if (res.status === 401) {
+      notifyUnauthorized();
+      throw new UnauthorizedError(message);
+    }
     throw new Error(Array.isArray(message) ? message.join(", ") : message);
   }
   return res.json();

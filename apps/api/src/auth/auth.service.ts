@@ -1,4 +1,10 @@
-import { Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import {
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { compare } from "bcryptjs";
 import { eq } from "drizzle-orm";
 import jwt from "jsonwebtoken";
@@ -8,9 +14,24 @@ import type { AuthenticatedUser, JwtPayload } from "./auth.types";
 
 const JWT_EXPIRY = "7d"; // short-lived-ish for a test-phase, single-token setup
 
+// Basic brute-force guard - in-memory, per-process (fine for the current
+// single-instance deployment, see hst2171-architecture; would need a
+// shared store like Redis if this ever runs as more than one API process).
+// Keyed by email, not IP - this is an internal tool with no self-registration
+// (a small, known set of accounts), so protecting a specific account against
+// repeated guesses matters more here than rate-limiting by source address.
+const LOGIN_ATTEMPT_LIMIT = 5;
+const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+
+interface LoginAttemptRecord {
+  count: number;
+  windowStartedAt: number;
+}
+
 @Injectable()
 export class AuthService {
   private readonly jwtSecret: string;
+  private readonly loginAttempts = new Map<string, LoginAttemptRecord>();
 
   constructor(@Inject(DATABASE) private readonly db: Database) {
     const secret = process.env.JWT_SECRET;
@@ -21,6 +42,9 @@ export class AuthService {
   }
 
   async login(email: string, password: string): Promise<{ token: string; user: AuthenticatedUser }> {
+    const attemptKey = email.toLowerCase();
+    this.assertNotRateLimited(attemptKey);
+
     const [user] = await this.db
       .select()
       .from(users)
@@ -30,8 +54,10 @@ export class AuthService {
     // Same error for "no such user" and "wrong password" - don't leak which
     // one it was.
     if (!user || !(await compare(password, user.passwordHash))) {
+      this.recordFailedAttempt(attemptKey);
       throw new UnauthorizedException("Invalid email or password");
     }
+    this.loginAttempts.delete(attemptKey);
 
     await this.db
       .update(users)
@@ -72,5 +98,30 @@ export class AuthService {
     }
 
     return { id: payload.sub, email: payload.email, name: payload.name };
+  }
+
+  private assertNotRateLimited(attemptKey: string): void {
+    const record = this.loginAttempts.get(attemptKey);
+    if (!record) return;
+    if (Date.now() - record.windowStartedAt >= LOGIN_ATTEMPT_WINDOW_MS) {
+      this.loginAttempts.delete(attemptKey);
+      return;
+    }
+    if (record.count >= LOGIN_ATTEMPT_LIMIT) {
+      throw new HttpException(
+        "Too many failed login attempts - try again later",
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  private recordFailedAttempt(attemptKey: string): void {
+    const now = Date.now();
+    const record = this.loginAttempts.get(attemptKey);
+    if (!record || now - record.windowStartedAt >= LOGIN_ATTEMPT_WINDOW_MS) {
+      this.loginAttempts.set(attemptKey, { count: 1, windowStartedAt: now });
+    } else {
+      record.count += 1;
+    }
   }
 }

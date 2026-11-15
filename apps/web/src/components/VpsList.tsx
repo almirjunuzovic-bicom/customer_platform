@@ -1,8 +1,6 @@
-import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { api, UnauthorizedError, type Source, type VpsInventory } from "@/lib/api";
-import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -75,7 +73,6 @@ function VpsRow({
 }
 
 export function VpsList({ sourceId, title = "All VPSes" }: { sourceId?: number; title?: string }) {
-  const { logout } = useAuth();
   // Only fetched/shown when the list isn't already scoped to one source -
   // every row would repeat the same value otherwise.
   const showSource = sourceId == null;
@@ -83,6 +80,9 @@ export function VpsList({ sourceId, title = "All VPSes" }: { sourceId?: number; 
     queryKey: ["vps", sourceId ?? "all"],
     queryFn: () => api.vpsList(sourceId != null ? { sourceId } : undefined),
     refetchInterval: 10_000, // matches the poller's own tick, see hst2171-architecture
+    // Don't retry a 401 3 times before giving up - it's not transient, and
+    // logout (see auth-context.tsx's onUnauthorized subscription) already
+    // happens as soon as the first attempt reports it.
     retry: (failureCount, err) => !(err instanceof UnauthorizedError) && failureCount < 3,
   });
   const sourcesQuery = useQuery({
@@ -91,10 +91,6 @@ export function VpsList({ sourceId, title = "All VPSes" }: { sourceId?: number; 
     enabled: showSource,
   });
   const sourcesById = new Map((sourcesQuery.data ?? []).map((s) => [s.id, s]));
-
-  useEffect(() => {
-    if (error instanceof UnauthorizedError) logout();
-  }, [error, logout]);
 
   return (
     <Card>

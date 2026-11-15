@@ -1,6 +1,6 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
-import { getToken, setToken as persistToken } from "./token";
+import { getToken, onUnauthorized, setToken as persistToken } from "./token";
 
 interface AuthUser {
   id: number;
@@ -18,8 +18,11 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 // No /auth/me-on-load validation yet (deliberately simple, test phase) - an
-// expired/invalid stored token just means the next API call 401s and
-// logout() gets called from there (see App.tsx's query error handling).
+// expired/invalid stored token just means the next API call 401s. That 401
+// is caught centrally in api.ts's request() (notifyUnauthorized()), which
+// this subscribes to below - not left to each page to notice on its own
+// query/mutation (confirmed as a real gap: only VpsList did this before,
+// so a 401 on Topology/Sources/VpsDetail just showed a raw error screen).
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [hasToken, setHasToken] = useState(() => Boolean(getToken()));
@@ -36,6 +39,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setHasToken(false);
   }
+
+  useEffect(() => onUnauthorized(logout), []);
 
   return (
     <AuthContext.Provider value={{ user, isAuthenticated: hasToken, login, logout }}>
