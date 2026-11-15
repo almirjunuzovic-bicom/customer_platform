@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   BadGatewayException,
+  ConflictException,
   Controller,
   Get,
   Inject,
@@ -10,7 +11,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, lte, or } from "drizzle-orm";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -21,6 +22,12 @@ import { ServerwareUnavailableError } from "../serverware/serverware.errors";
 
 const VPS_ACTIONS = ["start", "stop", "restart"] as const;
 type VpsAction = (typeof VPS_ACTIONS)[number];
+
+// Matches SERVERware's own saga coordinator, which waits up to 120s for a
+// completion/failure event per step (per apiagent-b6's source read) - our
+// lock shouldn't expire sooner than SERVERware itself would still consider
+// the operation in flight.
+const PENDING_ACTION_TIMEOUT_MS = 120_000;
 
 function parseIntParam(value: string, name: string): number {
   const n = Number(value);
@@ -155,12 +162,43 @@ export class VpsController {
       throw new NotFoundException(`No cluster for VPS ${vpsId}`);
     }
 
+    // SERVERware's own guard: it 400s start/stop/restart while some OTHER
+    // task is in progress (confirmed live - see hst2171-serverware-api).
+    // Check it ourselves first so we don't even make the call.
+    if (vps.task) {
+      throw new ConflictException(
+        `SERVERware operation already in progress on this VPS: ${vps.task}`,
+      );
+    }
+
+    // Our OWN lock - start/stop/restart don't set SERVERware's `task`
+    // themselves, so without this, two users (or one double-click) could
+    // both fire the same action before our 10s poller shows anything
+    // different. Atomic conditional UPDATE: only succeeds if nobody else
+    // holds the lock, or their lock is stale (see PENDING_ACTION_TIMEOUT_MS).
+    const now = new Date();
+    const staleBefore = new Date(now.getTime() - PENDING_ACTION_TIMEOUT_MS);
+    const lockResult = await this.db
+      .update(vpsInventory)
+      .set({ pendingAction: action, pendingActionAt: now })
+      .where(
+        and(
+          eq(vpsInventory.id, vpsId),
+          or(isNull(vpsInventory.pendingAction), lt(vpsInventory.pendingActionAt, staleBefore)),
+        ),
+      );
+    if (lockResult[0].affectedRows === 0) {
+      throw new ConflictException(
+        "Another start/stop/restart is already in progress on this VPS",
+      );
+    }
+
     await this.db.insert(vpsEvents).values({
       vpsInventoryId: vpsId,
       eventType: "action_requested",
       previousValue: null,
       newValue: action,
-      detectedAt: new Date(),
+      detectedAt: now,
       source: "platform_action",
       actorUserId: actor.id,
     });
@@ -175,6 +213,12 @@ export class VpsController {
         await this.serverware.restartVps(cluster.key, vps.serverwareVpsId);
       }
     } catch (error) {
+      // The call never actually landed on SERVERware's side - release our
+      // lock immediately instead of blocking retries for the full timeout.
+      await this.db
+        .update(vpsInventory)
+        .set({ pendingAction: null, pendingActionAt: null })
+        .where(eq(vpsInventory.id, vpsId));
       if (error instanceof ServerwareUnavailableError) {
         throw new BadGatewayException(error.message);
       }

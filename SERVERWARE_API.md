@@ -425,7 +425,49 @@ reading the handler code directly rather than guessing:
   recommendation or infra-level limit (reverse proxy, firewall, etc.) before
   relying on this for production traffic.
 
-## 9. Minimal example
+## 9. Async operations (saga pattern) — what `task` does and doesn't tell you
+
+Internally, ServerWare runs essentially every VPS lifecycle action — create,
+modify/rename, extend/shrink, remove, attach/detach, network config, OS update,
+backup/restore, snapshot rollback, **and also start/stop/restart** — as a "saga"
+(`internal/pkg/saga`): a distributed, multi-step transaction with compensation
+logic. This matters for how this platform should track long-running operations.
+
+- **The `VPSEx.task` field is a genuine "operation in progress" marker for most
+  saga-driven operations** — it's set to a value like `CREATING`, `MODIFYING`,
+  `RENAMING`, `EXTENDING`, `SHRINKING`, `REMOVING`, `ATTACHING`, `DETACHING`,
+  `NETWORKING`, `MOUNTING`, `UPDATING OS`, `RESIZING`, `RESTORING` when that
+  saga step begins, and cleared back to `""` when it ends. It's a plain column
+  in the normal VPS SELECT — visible directly in the regular list/detail
+  response, no separate endpoint needed.
+- **Exception: `start` / `stop` / `restart` do NOT use `task` at all.** Their
+  saga coordinators never call the task-update helper — the `task` field stays
+  `""` throughout a start/stop/restart, regardless of whether the VPS is mid-
+  operation. The HTTP handler only *reads* `task` as a precondition (`400` if
+  some other task is already in progress; also blocked if `state` is
+  `BUILDING`/`RUNNING`/`DETACHED`/`REMOVED` for a start request) — it never
+  writes "STARTING" into it. There's also no "STARTING"/"STOPPING"/
+  "RESTARTING" value in the `state` enum (only `RUNNING, STOPPED, BUILDING,
+  ERROR, DETACHED, UNKNOWN, REMOVED, SUSPENDED` exist anywhere in the code).
+- **No job/task ID is returned either.** `POST .../vpses/:vpsid/start` (and
+  stop/restart) dispatches the action asynchronously and immediately responds
+  with a bare `202 Accepted` and an empty body — there is nothing to poll
+  against except the VPS's own `state`, which (per the app code) appears to
+  jump directly from e.g. `STOPPED` to `RUNNING` with no visible intermediate
+  value exposed over the API. The actual state transition is reported by an
+  external component outside `sw-wcp`/`sw-mgr` (the same host-side controller
+  daemon noted in §7/§8) — even if it has an internal "starting" moment, it
+  isn't surfaced here.
+- **Practical takeaway:** for start/stop/restart specifically, polling the
+  plain `state` field (e.g. this platform's existing 10s poller) is the best
+  available signal — there's no richer saga/job status to switch to for these
+  three actions, even though `task` is genuinely useful for the heavier
+  operations listed above. To avoid firing a request that will just 400,
+  mirror the server's own precondition client-side before enabling a
+  Start/Stop/Restart button: don't allow the call unless `task == ""` and
+  `state` is outside the blocked set for that action.
+
+## 10. Minimal example
 
 ```bash
 curl -s \

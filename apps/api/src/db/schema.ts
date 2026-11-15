@@ -148,6 +148,22 @@ export const vpsInventory = mysqlTable(
     // bigger) history table, and lets the poller detect transitions without
     // an extra query. Source of truth for history remains vps_metrics_history.
     lastKnownState: varchar("last_known_state", { length: 32 }),
+    // SERVERware's own "an operation is already in progress on this VPS"
+    // marker (CREATING/MODIFYING/RESIZING/etc, "" when idle) - confirmed
+    // live that start/stop/restart never SET this themselves, but the
+    // server still 400s a start/stop/restart while some OTHER task is
+    // non-empty, so we mirror that same guard client-side (see
+    // hst2171-serverware-api).
+    task: varchar("task", { length: 32 }),
+    // Our OWN lock for start/stop/restart specifically (SERVERware's `task`
+    // doesn't cover these - see above). Set atomically when an action is
+    // accepted, cleared when the poller confirms the resulting state
+    // change, and treated as stale/expired after PENDING_ACTION_TIMEOUT_MS
+    // regardless (self-healing if a restart never shows a visible
+    // transition, or the app crashes mid-action). Lives in the DB, not
+    // browser state, so it's the same for every user's browser.
+    pendingAction: varchar("pending_action", { length: 16 }),
+    pendingActionAt: timestamp("pending_action_at"),
     pbxwareVersion: varchar("pbxware_version", { length: 32 }),
     memLimit: int("mem_limit"),
     cpuLimit: int("cpu_limit"),

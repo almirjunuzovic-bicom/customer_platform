@@ -25,25 +25,33 @@ function ActionButton({
   vpsName,
   action,
   variant,
+  disabledReason,
 }: {
   vpsId: number;
   vpsName: string;
   action: VpsAction;
   variant: "default" | "destructive" | "outline";
+  /** Set when some other operation already has this VPS locked - disables
+   * the button instead of letting the user hit the same 409 we already
+   * know is coming. */
+  disabledReason?: string;
 }) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: () => api.vpsAction(vpsId, action),
     // The action itself only confirms SERVERware accepted the request, not
-    // that the VPS changed state yet - refetching now mostly just clears
-    // the "pending" UI. The real state update lands within the next
-    // refetchInterval tick (<=10s) once the poller confirms it.
+    // that the VPS changed state yet - refetching now mostly just picks up
+    // the server-side pendingAction lock so every browser (not just this
+    // one) shows "in progress" right away. The real state update still
+    // lands within the next refetchInterval tick (<=10s).
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["vps"] });
       setOpen(false);
     },
   });
+
+  const isDisabled = Boolean(disabledReason) || mutation.isPending;
 
   return (
     <AlertDialog
@@ -58,7 +66,12 @@ function ActionButton({
     >
       <AlertDialogTrigger
         render={
-          <Button size="sm" variant={variant} disabled={mutation.isPending}>
+          <Button
+            size="sm"
+            variant={variant}
+            disabled={isDisabled}
+            title={disabledReason}
+          >
             {ACTION_LABELS[action]}
           </Button>
         }
@@ -91,17 +104,60 @@ function ActionButton({
   );
 }
 
-export function VpsActions({ vpsId, vpsName, state }: { vpsId: number; vpsName: string; state: string | null }) {
+export function VpsActions({
+  vpsId,
+  vpsName,
+  state,
+  task,
+  pendingAction,
+}: {
+  vpsId: number;
+  vpsName: string;
+  state: string | null;
+  /** SERVERware's own "other operation in progress" marker. */
+  task: string | null;
+  /** Our own start/stop/restart lock - see vps.controller.ts. */
+  pendingAction: string | null;
+}) {
+  const disabledReason = task
+    ? `SERVERware operation in progress: ${task}`
+    : pendingAction
+      ? `${ACTION_LABELS[pendingAction as VpsAction] ?? pendingAction} in progress...`
+      : undefined;
+
   return (
-    <div className="flex gap-2">
+    <div className="flex items-center gap-2">
       {state !== "RUNNING" && (
-        <ActionButton vpsId={vpsId} vpsName={vpsName} action="start" variant="default" />
+        <ActionButton
+          vpsId={vpsId}
+          vpsName={vpsName}
+          action="start"
+          variant="default"
+          disabledReason={disabledReason}
+        />
       )}
       {state === "RUNNING" && (
         <>
-          <ActionButton vpsId={vpsId} vpsName={vpsName} action="stop" variant="destructive" />
-          <ActionButton vpsId={vpsId} vpsName={vpsName} action="restart" variant="outline" />
+          <ActionButton
+            vpsId={vpsId}
+            vpsName={vpsName}
+            action="stop"
+            variant="destructive"
+            disabledReason={disabledReason}
+          />
+          <ActionButton
+            vpsId={vpsId}
+            vpsName={vpsName}
+            action="restart"
+            variant="outline"
+            disabledReason={disabledReason}
+          />
         </>
+      )}
+      {pendingAction && (
+        <span className="text-xs text-muted-foreground">
+          {ACTION_LABELS[pendingAction as VpsAction] ?? pendingAction}…
+        </span>
       )}
     </div>
   );

@@ -15,10 +15,25 @@ import {
 } from "@/components/ui/table";
 import { VpsActions } from "@/components/VpsActions";
 
-function StateBadge({ state }: { state: string | null }) {
-  if (state === "RUNNING") return <Badge>RUNNING</Badge>;
-  if (state === "STOPPED") return <Badge variant="outline">STOPPED</Badge>;
-  return <Badge variant="destructive">{state ?? "UNKNOWN"}</Badge>;
+function StateBadge({ state, task }: { state: string | null; task: string | null }) {
+  const badge =
+    state === "RUNNING" ? (
+      <Badge>RUNNING</Badge>
+    ) : state === "STOPPED" ? (
+      <Badge variant="outline">STOPPED</Badge>
+    ) : (
+      <Badge variant="destructive">{state ?? "UNKNOWN"}</Badge>
+    );
+  return (
+    <div className="flex items-center gap-1.5">
+      {badge}
+      {task && (
+        <Badge variant="secondary" title={`SERVERware task: ${task}`}>
+          {task}
+        </Badge>
+      )}
+    </div>
+  );
 }
 
 function VpsRow({ vps }: { vps: VpsInventory }) {
@@ -26,7 +41,7 @@ function VpsRow({ vps }: { vps: VpsInventory }) {
     <TableRow>
       <TableCell className="font-medium">{vps.name}</TableCell>
       <TableCell>
-        <StateBadge state={vps.lastKnownState} />
+        <StateBadge state={vps.lastKnownState} task={vps.task} />
       </TableCell>
       <TableCell>{vps.engine ?? "—"}</TableCell>
       <TableCell>{vps.memLimit ? `${vps.memLimit} MB` : "—"}</TableCell>
@@ -35,7 +50,13 @@ function VpsRow({ vps }: { vps: VpsInventory }) {
         {(vps.ipAddresses ?? []).join(", ") || "—"}
       </TableCell>
       <TableCell>
-        <VpsActions vpsId={vps.id} vpsName={vps.name} state={vps.lastKnownState} />
+        <VpsActions
+          vpsId={vps.id}
+          vpsName={vps.name}
+          state={vps.lastKnownState}
+          task={vps.task}
+          pendingAction={vps.pendingAction}
+        />
       </TableCell>
     </TableRow>
   );

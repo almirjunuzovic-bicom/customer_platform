@@ -50,6 +50,11 @@ export interface ServerwareVpsRaw {
   engine: string; // "kvm" | "lxc"
   state: string; // ground truth - NOT curr_state, see hst2171-serverware-api
   curr_state: string;
+  // "" when idle, else e.g. CREATING/MODIFYING/RESIZING... - start/stop/
+  // restart never set this themselves, but SERVERware 400s those calls
+  // while some OTHER task is non-empty (confirmed live, see
+  // hst2171-serverware-api).
+  task: string;
   mem_limit: number;
   cpu_limit: number;
   cpu_share: number;
@@ -75,6 +80,7 @@ export interface ServerwareVps {
   name: string;
   engine: string;
   state: string;
+  task: string;
   memLimit: number;
   cpuLimit: number;
   cpuShare: number;
@@ -139,6 +145,7 @@ export function mapVps(raw: ServerwareVpsRaw): ServerwareVps {
     name: raw.name,
     engine: raw.engine,
     state: raw.state,
+    task: raw.task,
     memLimit: raw.mem_limit,
     cpuLimit: raw.cpu_limit,
     cpuShare: raw.cpu_share,

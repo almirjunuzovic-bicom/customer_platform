@@ -32,6 +32,9 @@ export interface VpsInventory {
   name: string;
   engine: string | null;
   lastKnownState: string | null;
+  task: string | null; // SERVERware's own "other operation in progress" marker
+  pendingAction: string | null; // our own start/stop/restart lock
+  pendingActionAt: string | null;
   pbxwareVersion: string | null;
   memLimit: number | null;
   cpuLimit: number | null;

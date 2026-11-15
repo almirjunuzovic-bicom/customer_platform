@@ -237,6 +237,7 @@ export class SyncService {
           name: vps.name,
           engine: vps.engine,
           lastKnownState: vps.state,
+          task: vps.task || null,
           pbxwareVersion: vps.pbxwareVersion,
           memLimit: vps.memLimit,
           cpuLimit: vps.cpuLimit,
@@ -286,7 +287,8 @@ export class SyncService {
             now,
           );
         }
-        if (prior.lastKnownState !== vps.state) {
+        const stateChanged = prior.lastKnownState !== vps.state;
+        if (stateChanged) {
           await this.recordEvent(
             vpsInventoryId,
             "state_changed",
@@ -304,7 +306,13 @@ export class SyncService {
             name: vps.name,
             engine: vps.engine,
             lastKnownState: vps.state,
-            pbxwareVersion: vps.pbxwareVersion,
+            task: vps.task || null,
+            // Confirmed state change = our own start/stop/restart lock (if
+            // any) can be released early, instead of waiting out its full
+            // staleness timeout (see vps.controller.ts performAction). A
+            // restart that never shows a visible transition just relies on
+            // that timeout instead - acceptable, see hst2171-architecture.
+            ...(stateChanged ? { pendingAction: null, pendingActionAt: null } : {}),
             memLimit: vps.memLimit,
             cpuLimit: vps.cpuLimit,
             cpuShare: vps.cpuShare,
