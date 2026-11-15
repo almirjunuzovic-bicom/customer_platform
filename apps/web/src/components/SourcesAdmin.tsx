@@ -41,6 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SyncStatus } from "@/components/SyncStatus";
 import { Switch } from "@/components/ui/switch";
 import {
   Table,
@@ -76,24 +77,6 @@ function EnabledToggle({ source }: { source: Source }) {
       disabled={mutation.isPending}
       onCheckedChange={(checked) => mutation.mutate(checked)}
     />
-  );
-}
-
-function SyncStatus({ source }: { source: Source }) {
-  if (!source.lastSyncAt) {
-    return <span className="text-xs text-muted-foreground">never synced</span>;
-  }
-  if (source.lastSyncOk) {
-    return (
-      <span className="text-xs text-muted-foreground">
-        OK · {new Date(source.lastSyncAt).toLocaleTimeString()}
-      </span>
-    );
-  }
-  return (
-    <span className="text-xs text-destructive" title={source.lastSyncError ?? undefined}>
-      failed · {new Date(source.lastSyncAt).toLocaleTimeString()}
-    </span>
   );
 }
 

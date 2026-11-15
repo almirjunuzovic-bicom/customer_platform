@@ -55,11 +55,11 @@ function VpsRow({ vps }: { vps: VpsInventory }) {
   );
 }
 
-export function VpsList() {
+export function VpsList({ sourceId, title = "VPS Instances" }: { sourceId?: number; title?: string }) {
   const { logout } = useAuth();
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["vps"],
-    queryFn: api.vpsList,
+    queryKey: ["vps", sourceId ?? "all"],
+    queryFn: () => api.vpsList(sourceId != null ? { sourceId } : undefined),
     refetchInterval: 10_000, // matches the poller's own tick, see hst2171-architecture
     retry: (failureCount, err) => !(err instanceof UnauthorizedError) && failureCount < 3,
   });
@@ -71,7 +71,7 @@ export function VpsList() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>VPS Instances</CardTitle>
+        <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
         {isLoading && (

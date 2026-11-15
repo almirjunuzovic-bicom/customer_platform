@@ -175,7 +175,13 @@ export const api = {
     request<{ status: string; service: string }>("/ops/restart-worker", "POST"),
   partitions: () => request<Partition[]>("/partitions"),
   hosts: () => request<Host[]>("/hosts"),
-  vpsList: () => request<VpsInventory[]>("/vps"),
+  vpsList: (filters?: { sourceId?: number; partitionId?: number }) => {
+    const query = new URLSearchParams();
+    if (filters?.sourceId != null) query.set("sourceId", String(filters.sourceId));
+    if (filters?.partitionId != null) query.set("partitionId", String(filters.partitionId));
+    const qs = query.toString();
+    return request<VpsInventory[]>(`/vps${qs ? `?${qs}` : ""}`);
+  },
   vpsGet: (id: number) => request<VpsInventory>(`/vps/${id}`),
   vpsHistory: (
     id: number,
