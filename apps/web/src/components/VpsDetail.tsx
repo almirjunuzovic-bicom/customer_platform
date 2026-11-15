@@ -58,7 +58,7 @@ function MetricChart({
     <div>
       {/* Single series - no legend box needed, the title already names it. */}
       <p className="mb-2 text-sm font-medium">{title}</p>
-      <ResponsiveContainer width="100%" height={200}>
+      <ResponsiveContainer width="100%" height={240}>
         <LineChart data={data} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis
@@ -228,7 +228,7 @@ export function VpsDetail() {
             <p className="text-sm text-muted-foreground">No history yet.</p>
           )}
           {chartData.length > 0 && (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            <div className="space-y-6">
               <MetricChart title="CPU" dataKey="CPU %" color="var(--chart-1)" data={chartData} />
               <MetricChart
                 title="Memory"
