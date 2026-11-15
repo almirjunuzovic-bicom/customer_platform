@@ -90,6 +90,19 @@ export interface VpsEvent {
   actorUserId: number | null;
 }
 
+export interface MetricSummary {
+  peak: number | null;
+  avg: number | null;
+  min: number | null;
+  current: number | null;
+}
+
+export interface HistorySummary {
+  cpuUsage: MetricSummary;
+  memUsage: MetricSummary;
+  diskUsage: MetricSummary;
+}
+
 export interface VpsMetricPoint {
   capturedAt: string;
   state: string;
@@ -164,12 +177,23 @@ export const api = {
   hosts: () => request<Host[]>("/hosts"),
   vpsList: () => request<VpsInventory[]>("/vps"),
   vpsGet: (id: number) => request<VpsInventory>(`/vps/${id}`),
-  vpsHistory: (id: number, range?: { from?: string; to?: string }) => {
+  vpsHistory: (
+    id: number,
+    range?: { from?: string; to?: string; bucketSeconds?: number },
+  ) => {
+    const query = new URLSearchParams();
+    if (range?.from) query.set("from", range.from);
+    if (range?.to) query.set("to", range.to);
+    if (range?.bucketSeconds) query.set("bucketSeconds", String(range.bucketSeconds));
+    const qs = query.toString();
+    return request<VpsMetricPoint[]>(`/vps/${id}/history${qs ? `?${qs}` : ""}`);
+  },
+  vpsHistorySummary: (id: number, range?: { from?: string; to?: string }) => {
     const query = new URLSearchParams();
     if (range?.from) query.set("from", range.from);
     if (range?.to) query.set("to", range.to);
     const qs = query.toString();
-    return request<VpsMetricPoint[]>(`/vps/${id}/history${qs ? `?${qs}` : ""}`);
+    return request<HistorySummary>(`/vps/${id}/history/summary${qs ? `?${qs}` : ""}`);
   },
   vpsEvents: (id: number) => request<VpsEvent[]>(`/vps/${id}/events`),
   vpsAction: (id: number, action: VpsAction) =>

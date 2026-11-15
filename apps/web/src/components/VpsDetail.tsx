@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { api, type VpsMetricPoint } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -155,44 +155,34 @@ function presetToRange(
   return { from: new Date(Date.now() - hours * 3600_000).toISOString() };
 }
 
-const MAX_CHART_POINTS = 300;
+const TARGET_CHART_POINTS = 300;
 
 /**
- * Stride-sample down to at most maxPoints - at 10s resolution even a single
- * day is 8640 rows, which made both the overview charts and the dialog
- * visibly lag (Recharts rendering that many SVG points blocks the main
- * thread). Stats (peak/avg/min/current) are computed from the full
- * un-sampled array elsewhere, this is for the chart line only - a missed
- * single-tick spike in the drawn line is an acceptable tradeoff for a
- * responsive UI, the stat tiles stay exact regardless of sampling.
+ * How coarse a bucket the /history endpoint should average over, given the
+ * actual span being viewed - sized so ~300 points come back regardless of
+ * range, computed from the span we already know rather than guessing a
+ * fixed interval per preset. Replaces client-side downsampling: that only
+ * fixed Recharts' render cost, not the cost of fetching/parsing every raw
+ * row over the network in the first place (confirmed live: "7 days"/"All"
+ * was still hauling tens of thousands of rows just to throw most away).
+ * "All" (no `from`) falls back to a safe coarse default since the true
+ * span isn't known upfront without an extra query.
  */
-function downsample<T>(points: T[], maxPoints = MAX_CHART_POINTS): T[] {
-  if (points.length <= maxPoints) return points;
-  const step = points.length / maxPoints;
-  const result: T[] = [];
-  for (let i = 0; i < maxPoints; i++) {
-    result.push(points[Math.floor(i * step)]);
-  }
-  return result;
+function bucketSecondsForRange(from?: string, to?: string): number {
+  if (!from) return 3600;
+  const toMs = to ? new Date(to).getTime() : Date.now();
+  const spanSeconds = (toMs - new Date(from).getTime()) / 1000;
+  const raw = Math.ceil(spanSeconds / TARGET_CHART_POINTS);
+  return Math.max(10, Math.ceil(raw / 10) * 10); // round up to a multiple of the 10s poller tick
 }
 
-function computeStats(points: VpsMetricPoint[], field: "cpuUsage" | "memUsage" | "diskUsage") {
-  const values = points.map((p) => p[field]).filter((v): v is number => v != null);
-  if (values.length === 0) return null;
-  const sum = values.reduce((a, b) => a + b, 0);
-  return {
-    peak: Math.max(...values),
-    min: Math.min(...values),
-    avg: sum / values.length,
-    current: values[values.length - 1],
-  };
-}
-
-function StatTile({ label, value }: { label: string; value: number }) {
+function StatTile({ label, value }: { label: string; value: number | null }) {
   return (
     <div className="rounded-lg border p-3 text-center">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-lg font-semibold tabular-nums">{value.toFixed(1)}%</p>
+      <p className="text-lg font-semibold tabular-nums">
+        {value != null ? `${value.toFixed(1)}%` : "—"}
+      </p>
     </div>
   );
 }
@@ -214,19 +204,32 @@ function MetricDetailDialog({
     () => presetToRange(preset, customFrom, customTo),
     [preset, customFrom, customTo],
   );
+  const bucketSeconds = useMemo(
+    () => bucketSecondsForRange(range.from, range.to),
+    [range.from, range.to],
+  );
   const config = metric ? METRIC_CONFIG[metric] : null;
 
   const query = useQuery({
-    queryKey: ["vps", vpsId, "history", range.from ?? null, range.to ?? null],
-    queryFn: () => api.vpsHistory(vpsId, range),
+    queryKey: ["vps", vpsId, "history", range.from ?? null, range.to ?? null, bucketSeconds],
+    queryFn: () => api.vpsHistory(vpsId, { ...range, bucketSeconds }),
+    enabled: metric !== null,
+    refetchInterval: 10_000,
+  });
+  // Separate SQL-aggregate query, deliberately not derived from the
+  // (possibly bucket-averaged) points above - an averaged bucket would
+  // already have smoothed away the true peak/min.
+  const summaryQuery = useQuery({
+    queryKey: ["vps", vpsId, "history-summary", range.from ?? null, range.to ?? null],
+    queryFn: () => api.vpsHistorySummary(vpsId, range),
     enabled: metric !== null,
     refetchInterval: 10_000,
   });
 
   const points = query.data ?? [];
-  const stats = config ? computeStats(points, config.field) : null;
+  const stats = config ? summaryQuery.data?.[config.field] : undefined;
   const chartData = config
-    ? downsample(points).map((p) => ({
+    ? points.map((p) => ({
         time: new Date(p.capturedAt).toLocaleString([], {
           month: "short",
           day: "numeric",
@@ -357,11 +360,12 @@ export function VpsDetail() {
   const overviewFrom = useMemo(() => new Date(Date.now() - 24 * 3600_000).toISOString(), []);
   const historyQuery = useQuery({
     queryKey: ["vps", id, "history", "24h"],
-    // Unbounded history (no from/to) made this page visibly lag - at 10s
-    // resolution it's 8640+ rows per day and growing, Recharts chokes on
-    // that many points. Last 24h is enough for a "how's it doing" glance;
-    // the per-metric Details dialog is where a longer range belongs.
-    queryFn: () => api.vpsHistory(id, { from: overviewFrom }),
+    // Unbounded, unbucketed history made this page visibly lag - at 10s
+    // resolution it's 8640+ rows per day and growing, both over the wire
+    // and for Recharts to render. Last 24h, averaged into ~300 buckets
+    // server-side, is enough for a "how's it doing" glance; the per-metric
+    // Details dialog is where a longer/exact-stats range belongs.
+    queryFn: () => api.vpsHistory(id, { from: overviewFrom, bucketSeconds: 300 }),
     refetchInterval: 10_000,
   });
   const eventsQuery = useQuery({
@@ -394,7 +398,7 @@ export function VpsDetail() {
   const partition = partitionsQuery.data?.find((p) => p.id === vps.partitionId);
   const source = sourcesQuery.data?.find((s) => s.id === vps.sourceId);
   const history = historyQuery.data ?? [];
-  const chartData = downsample(history).map((point) => ({
+  const chartData = history.map((point) => ({
     time: new Date(point.capturedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     "CPU %": point.cpuUsage,
     "Memory %": point.memUsage,

@@ -11,7 +11,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { and, eq, gte, isNull, lt, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -36,6 +36,14 @@ function parseIntParam(value: string, name: string): number {
     throw new BadRequestException(`"${name}" must be an integer`);
   }
   return n;
+}
+
+function parseDateParam(value: string, name: string): Date {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new BadRequestException(`"${name}" is not a valid date`);
+  }
+  return date;
 }
 
 @Controller("vps")
@@ -84,35 +92,128 @@ export class VpsController {
     return row;
   }
 
+  /**
+   * Without `bucketSeconds`: raw rows (unbounded - callers own range-scoping
+   * it). With it: one averaged row per bucket, computed in SQL - added
+   * after confirming live that "7 days"/"All" in the frontend's Details
+   * dialog was fetching and parsing tens of thousands of raw rows just to
+   * downsample them client-side, which only fixed the chart's render cost,
+   * not the network/DB cost of hauling every row over in the first place.
+   * See history/summary for exact (non-bucketed) peak/avg/min/current -
+   * that's a separate SQL aggregate, deliberately NOT derived from these
+   * averaged buckets, which would already have smoothed real spikes away.
+   */
   @Get(":id/history")
   async history(
+    @Param("id") id: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("bucketSeconds") bucketSeconds?: string,
+  ) {
+    const vpsId = parseIntParam(id, "id");
+    const conditions = [eq(vpsMetricsHistory.vpsInventoryId, vpsId)];
+
+    if (from) conditions.push(gte(vpsMetricsHistory.capturedAt, parseDateParam(from, "from")));
+    if (to) conditions.push(lte(vpsMetricsHistory.capturedAt, parseDateParam(to, "to")));
+
+    if (!bucketSeconds) {
+      return this.db
+        .select()
+        .from(vpsMetricsHistory)
+        .where(and(...conditions))
+        .orderBy(vpsMetricsHistory.capturedAt);
+    }
+
+    const bucketSecondsNum = parseIntParam(bucketSeconds, "bucketSeconds");
+    if (bucketSecondsNum < 10) {
+      throw new BadRequestException(`"bucketSeconds" must be >= 10 (the poller's own tick)`);
+    }
+    // FLOOR(UNIX_TIMESTAMP(...) / N) * N buckets every row into an N-second
+    // window; MySQL (not Postgres) has no native time_bucket, this is the
+    // standard equivalent.
+    const bucket = sql`FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(${vpsMetricsHistory.capturedAt}) / ${bucketSecondsNum}) * ${bucketSecondsNum})`;
+    return this.db
+      .select({
+        capturedAt: bucket.as("captured_at"),
+        state: sql<string>`MAX(${vpsMetricsHistory.state})`.as("state"),
+        cpuUsage: sql<number | null>`AVG(${vpsMetricsHistory.cpuUsage})`.as("cpu_usage"),
+        memUsage: sql<number | null>`AVG(${vpsMetricsHistory.memUsage})`.as("mem_usage"),
+        diskUsage: sql<number | null>`AVG(${vpsMetricsHistory.diskUsage})`.as("disk_usage"),
+        ccCount: sql<number | null>`AVG(${vpsMetricsHistory.ccCount})`.as("cc_count"),
+        uptimeSeconds: sql<number | null>`MAX(${vpsMetricsHistory.uptimeSeconds})`.as(
+          "uptime_seconds",
+        ),
+      })
+      .from(vpsMetricsHistory)
+      .where(and(...conditions))
+      .groupBy(bucket)
+      .orderBy(asc(bucket));
+  }
+
+  /**
+   * Exact peak/average/min/current for the given range, computed as a
+   * single SQL aggregate pass - cheap regardless of how many raw rows exist
+   * in that range (unlike fetching them all to compute this client-side).
+   * Deliberately separate from the (possibly bucketed) /history endpoint
+   * above so a coarse chart bucket size never affects these numbers.
+   */
+  @Get(":id/history/summary")
+  async historySummary(
     @Param("id") id: string,
     @Query("from") from?: string,
     @Query("to") to?: string,
   ) {
     const vpsId = parseIntParam(id, "id");
     const conditions = [eq(vpsMetricsHistory.vpsInventoryId, vpsId)];
+    if (from) conditions.push(gte(vpsMetricsHistory.capturedAt, parseDateParam(from, "from")));
+    if (to) conditions.push(lte(vpsMetricsHistory.capturedAt, parseDateParam(to, "to")));
 
-    if (from) {
-      const fromDate = new Date(from);
-      if (Number.isNaN(fromDate.getTime())) {
-        throw new BadRequestException(`"from" is not a valid date`);
-      }
-      conditions.push(gte(vpsMetricsHistory.capturedAt, fromDate));
-    }
-    if (to) {
-      const toDate = new Date(to);
-      if (Number.isNaN(toDate.getTime())) {
-        throw new BadRequestException(`"to" is not a valid date`);
-      }
-      conditions.push(lte(vpsMetricsHistory.capturedAt, toDate));
-    }
+    const [aggregates] = await this.db
+      .select({
+        cpuPeak: sql<number | null>`MAX(${vpsMetricsHistory.cpuUsage})`,
+        cpuAvg: sql<number | null>`AVG(${vpsMetricsHistory.cpuUsage})`,
+        cpuMin: sql<number | null>`MIN(${vpsMetricsHistory.cpuUsage})`,
+        memPeak: sql<number | null>`MAX(${vpsMetricsHistory.memUsage})`,
+        memAvg: sql<number | null>`AVG(${vpsMetricsHistory.memUsage})`,
+        memMin: sql<number | null>`MIN(${vpsMetricsHistory.memUsage})`,
+        diskPeak: sql<number | null>`MAX(${vpsMetricsHistory.diskUsage})`,
+        diskAvg: sql<number | null>`AVG(${vpsMetricsHistory.diskUsage})`,
+        diskMin: sql<number | null>`MIN(${vpsMetricsHistory.diskUsage})`,
+      })
+      .from(vpsMetricsHistory)
+      .where(and(...conditions));
 
-    return this.db
-      .select()
+    const [latest] = await this.db
+      .select({
+        cpuUsage: vpsMetricsHistory.cpuUsage,
+        memUsage: vpsMetricsHistory.memUsage,
+        diskUsage: vpsMetricsHistory.diskUsage,
+      })
       .from(vpsMetricsHistory)
       .where(and(...conditions))
-      .orderBy(vpsMetricsHistory.capturedAt);
+      .orderBy(desc(vpsMetricsHistory.capturedAt))
+      .limit(1);
+
+    return {
+      cpuUsage: {
+        peak: aggregates.cpuPeak,
+        avg: aggregates.cpuAvg,
+        min: aggregates.cpuMin,
+        current: latest?.cpuUsage ?? null,
+      },
+      memUsage: {
+        peak: aggregates.memPeak,
+        avg: aggregates.memAvg,
+        min: aggregates.memMin,
+        current: latest?.memUsage ?? null,
+      },
+      diskUsage: {
+        peak: aggregates.diskPeak,
+        avg: aggregates.diskAvg,
+        min: aggregates.diskMin,
+        current: latest?.diskUsage ?? null,
+      },
+    };
   }
 
   @Get(":id/events")
