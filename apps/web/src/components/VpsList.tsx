@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, type VpsInventory } from "@/lib/api";
+import { api, UnauthorizedError, type VpsInventory } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,11 +38,17 @@ function VpsRow({ vps }: { vps: VpsInventory }) {
 }
 
 export function VpsList() {
+  const { logout } = useAuth();
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["vps"],
     queryFn: api.vpsList,
     refetchInterval: 10_000, // matches the poller's own tick, see hst2171-architecture
+    retry: (failureCount, err) => !(err instanceof UnauthorizedError) && failureCount < 3,
   });
+
+  useEffect(() => {
+    if (error instanceof UnauthorizedError) logout();
+  }, [error, logout]);
 
   return (
     <Card>

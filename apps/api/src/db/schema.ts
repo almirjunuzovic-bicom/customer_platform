@@ -28,6 +28,11 @@ export const users = mysqlTable("users", {
   email: varchar("email", { length: 256 }).notNull().unique(),
   name: varchar("name", { length: 128 }).notNull(),
   passwordHash: varchar("password_hash", { length: 256 }).notNull(),
+  // Embedded in every issued JWT. Bumping this invalidates every outstanding
+  // token for this user at once - the only revocation mechanism we have
+  // (JWTs are otherwise stateless/unrevokable before they expire). See
+  // revoke-user.manual.ts.
+  tokenVersion: int("token_version").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   lastLoginAt: timestamp("last_login_at"),
 });

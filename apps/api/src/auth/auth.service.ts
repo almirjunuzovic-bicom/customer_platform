@@ -38,18 +38,39 @@ export class AuthService {
       .set({ lastLoginAt: new Date() })
       .where(eq(users.id, user.id));
 
-    const payload: JwtPayload = { sub: user.id, email: user.email, name: user.name };
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      name: user.name,
+      tokenVersion: user.tokenVersion,
+    };
     const token = jwt.sign(payload, this.jwtSecret, { expiresIn: JWT_EXPIRY });
 
     return { token, user: { id: user.id, email: user.email, name: user.name } };
   }
 
-  verifyToken(token: string): AuthenticatedUser {
+  // Async on purpose - checks the token's version against the CURRENT value
+  // in the DB, not just the signature/expiry, so a revoked token (see
+  // revoke-user.manual.ts) stops working immediately rather than waiting
+  // out its full 7-day lifetime.
+  async verifyToken(token: string): Promise<AuthenticatedUser> {
+    let payload: JwtPayload;
     try {
-      const payload = jwt.verify(token, this.jwtSecret) as unknown as JwtPayload;
-      return { id: payload.sub, email: payload.email, name: payload.name };
+      payload = jwt.verify(token, this.jwtSecret) as unknown as JwtPayload;
     } catch {
       throw new UnauthorizedException("Invalid or expired token");
     }
+
+    const [user] = await this.db
+      .select({ tokenVersion: users.tokenVersion })
+      .from(users)
+      .where(eq(users.id, payload.sub))
+      .limit(1);
+
+    if (!user || user.tokenVersion !== payload.tokenVersion) {
+      throw new UnauthorizedException("Token has been revoked");
+    }
+
+    return { id: payload.sub, email: payload.email, name: payload.name };
   }
 }

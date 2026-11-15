@@ -5,7 +5,7 @@
  */
 import "dotenv/config";
 import { hash } from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
 import * as schema from "../db/schema";
@@ -33,7 +33,12 @@ async function main() {
   await db
     .insert(schema.users)
     .values({ email, name, passwordHash })
-    .onDuplicateKeyUpdate({ set: { name, passwordHash } });
+    .onDuplicateKeyUpdate({
+      // Resetting a password also revokes any tokens issued under the old
+      // one - otherwise someone who leaked the old password keeps a live
+      // session through the reset.
+      set: { name, passwordHash, tokenVersion: sql`${schema.users.tokenVersion} + 1` },
+    });
 
   const [user] = await db
     .select({ id: schema.users.id, email: schema.users.email })
