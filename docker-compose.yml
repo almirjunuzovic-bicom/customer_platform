@@ -1,0 +1,21 @@
+# Redis for the sync scheduler's job queue - run on the APP VM (not the DB
+# VM). `network_mode: host` is required, not optional, on SERVERware VMs:
+# the default bridge network needs the kernel's `raw` iptables table, which
+# this platform's VM template doesn't have compiled in (confirmed live on
+# AlmirTest - see ONBOARDING.md). Host networking means no container-to-
+# container DNS, so the app connects to Redis via the VM's own private IP
+# or 127.0.0.1, not a service name.
+services:
+  redis:
+    image: redis:7-alpine
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    command: >
+      redis-server
+      --bind ${PRIVATE_IP:?set PRIVATE_IP in .env, e.g. 192.168.20.X} 127.0.0.1
+      --requirepass ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+
+volumes:
+  redis-data:
