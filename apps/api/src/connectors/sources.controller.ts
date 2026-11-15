@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { OpsService } from "../ops/ops.service";
 import { ConnectorRegistryService } from "./connector-registry.service";
 import { CONNECTOR_TYPES, SourceUnavailableError, type ConnectorType } from "./connector.types";
 import { SourcesService } from "./sources.service";
@@ -59,6 +60,7 @@ export class SourcesController {
   constructor(
     private readonly sourcesService: SourcesService,
     private readonly connectorRegistry: ConnectorRegistryService,
+    private readonly opsService: OpsService,
   ) {}
 
   @Get()
@@ -113,13 +115,15 @@ export class SourcesController {
     if (!body.credentials || typeof body.credentials !== "object") {
       throw new BadRequestException(`"credentials" must be an object`);
     }
-    return this.sourcesService.upsert({
+    const result = await this.sourcesService.upsert({
       key: body.key,
       name: body.name,
       connectorType,
       config: body.config,
       credentials: body.credentials,
     });
+    await this.opsService.restartWorkerBestEffort();
+    return result;
   }
 
   @Patch(":id")
@@ -127,7 +131,9 @@ export class SourcesController {
     if (typeof body.enabled !== "boolean") {
       throw new BadRequestException(`"enabled" (boolean) is the only field this endpoint supports right now`);
     }
-    return this.sourcesService.setEnabled(parseIdParam(id), body.enabled);
+    const result = await this.sourcesService.setEnabled(parseIdParam(id), body.enabled);
+    await this.opsService.restartWorkerBestEffort();
+    return result;
   }
 
   /**
@@ -148,6 +154,13 @@ export class SourcesController {
         `"confirmKey" must exactly match this source's key ("${source.key}") to delete it`,
       );
     }
-    return this.sourcesService.delete(sourceId);
+    const result = await this.sourcesService.delete(sourceId);
+    // Was previously enabled -> its BullMQ scheduler is still live in Redis
+    // and will keep firing "No source with id X" every 10s until the
+    // worker restarts and reconciles - restart it now instead of leaving
+    // that to clutter the logs (confirmed this actually happens - see
+    // hst2171-architecture).
+    await this.opsService.restartWorkerBestEffort();
+    return result;
   }
 }

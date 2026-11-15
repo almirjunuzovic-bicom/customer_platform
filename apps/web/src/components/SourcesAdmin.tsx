@@ -66,7 +66,9 @@ function EnabledToggle({ source }: { source: Source }) {
     mutationFn: (enabled: boolean) => api.setSourceEnabled(source.id, enabled),
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ["sources"] });
-      toast.success(`"${updated.key}" ${updated.enabled ? "enabled" : "disabled"}`);
+      toast.success(`"${updated.key}" ${updated.enabled ? "enabled" : "disabled"}`, {
+        description: "Worker is restarting automatically to apply it.",
+      });
     },
     onError: (error) => toast.error((error as Error).message),
   });
@@ -98,7 +100,7 @@ function AddSourceForm({ onDone }: { onDone: () => void }) {
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ["sources"] });
       toast.success(`Source "${created.key}" saved`, {
-        description: "Restart the worker service to pick it up (no hot reload yet).",
+        description: "Worker is restarting automatically to pick it up.",
       });
       onDone();
     },
@@ -295,9 +297,10 @@ function RestartWorkerButton() {
           <AlertDialogHeader>
             <AlertDialogTitle>Restart the sync worker?</AlertDialogTitle>
             <AlertDialogDescription>
-              Needed to pick up any source you just added, enabled, or disabled - the
-              scheduler is only set up once at boot. Syncing pauses for a few seconds
-              while it comes back up.
+              Adding, enabling, disabling, or deleting a source already restarts the
+              worker automatically - use this manually only if it's otherwise stuck
+              (e.g. a crash, or a source added via the CLI script). Syncing pauses for
+              a few seconds while it comes back up.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {mutation.isError && (
@@ -324,7 +327,7 @@ function DeleteSourceButton({ source }: { source: Source }) {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["sources"] });
       toast.success(`Source "${result.key}" and all its data deleted`, {
-        description: "Restart the worker if it was enabled - its sync job won't stop on its own.",
+        description: "Worker is restarting automatically to stop its sync job.",
       });
       setOpen(false);
     },
@@ -391,7 +394,7 @@ function AddSourceDialog() {
           <DialogTitle>Add source</DialogTitle>
           <DialogDescription>
             Register a new infrastructure source (SERVERware cluster, AWS account, Proxmox
-            node). Takes effect on the next worker restart.
+            node). The worker restarts automatically afterward to pick it up.
           </DialogDescription>
         </DialogHeader>
         <AddSourceForm onDone={() => setOpen(false)} />
