@@ -237,6 +237,7 @@ export class SyncService {
           name: vps.name,
           engine: vps.engine,
           lastKnownState: vps.state,
+          lastUptimeSeconds: vps.uptimeSeconds,
           task: vps.task || null,
           pbxwareVersion: vps.pbxwareVersion,
           memLimit: vps.memLimit,
@@ -297,6 +298,13 @@ export class SyncService {
             now,
           );
         }
+        // Restart goes RUNNING -> RUNNING with no visible state transition
+        // (confirmed - see hst2171-serverware-api), so stateChanged alone
+        // never catches it. A reboot resets uptime to ~0 though, and
+        // uptime only ever climbs while actually running - a drop is a
+        // reliable "it actually rebooted" signal on its own.
+        const uptimeReset =
+          prior.lastUptimeSeconds != null && vps.uptimeSeconds < prior.lastUptimeSeconds;
 
         await this.db
           .update(vpsInventory)
@@ -306,13 +314,15 @@ export class SyncService {
             name: vps.name,
             engine: vps.engine,
             lastKnownState: vps.state,
+            lastUptimeSeconds: vps.uptimeSeconds,
             task: vps.task || null,
-            // Confirmed state change = our own start/stop/restart lock (if
-            // any) can be released early, instead of waiting out its full
-            // staleness timeout (see vps.controller.ts performAction). A
-            // restart that never shows a visible transition just relies on
-            // that timeout instead - acceptable, see hst2171-architecture.
-            ...(stateChanged ? { pendingAction: null, pendingActionAt: null } : {}),
+            // Confirmed state change OR a detected reboot = our own
+            // start/stop/restart lock (if any) can be released early,
+            // instead of waiting out its full staleness timeout (see
+            // vps.controller.ts performAction).
+            ...(stateChanged || uptimeReset
+              ? { pendingAction: null, pendingActionAt: null }
+              : {}),
             memLimit: vps.memLimit,
             cpuLimit: vps.cpuLimit,
             cpuShare: vps.cpuShare,

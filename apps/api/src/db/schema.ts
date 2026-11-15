@@ -148,6 +148,12 @@ export const vpsInventory = mysqlTable(
     // bigger) history table, and lets the poller detect transitions without
     // an extra query. Source of truth for history remains vps_metrics_history.
     lastKnownState: varchar("last_known_state", { length: 32 }),
+    // Cache of the last-seen uptime, purely to detect a reboot: restart
+    // goes RUNNING -> RUNNING (no visible state transition per
+    // hst2171-serverware-api), but SERVERware resets uptime to ~0 on
+    // actual reboot. A drop in this value is what clears a "restart"
+    // pendingAction early instead of sitting out the full timeout.
+    lastUptimeSeconds: bigint("last_uptime_seconds", { mode: "number" }),
     // SERVERware's own "an operation is already in progress on this VPS"
     // marker (CREATING/MODIFYING/RESIZING/etc, "" when idle) - confirmed
     // live that start/stop/restart never SET this themselves, but the

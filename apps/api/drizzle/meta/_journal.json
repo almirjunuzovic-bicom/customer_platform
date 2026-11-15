@@ -36,6 +36,13 @@
       "when": 1794726713624,
       "tag": "0004_bright_landau",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1794726989727,
+      "tag": "0005_lush_tyrannus",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `vps_inventory` ADD `last_uptime_seconds` bigint;
