@@ -5,6 +5,7 @@ import {
   Controller,
   Delete,
   Get,
+  Inject,
   Param,
   Patch,
   Post,
@@ -60,9 +61,9 @@ function assertConnectorType(value: string | undefined): ConnectorType {
 @UseGuards(JwtAuthGuard)
 export class SourcesController {
   constructor(
-    private readonly sourcesService: SourcesService,
-    private readonly connectorRegistry: ConnectorRegistryService,
-    private readonly opsService: OpsService,
+    @Inject(SourcesService) private readonly sourcesService: SourcesService,
+    @Inject(ConnectorRegistryService) private readonly connectorRegistry: ConnectorRegistryService,
+    @Inject(OpsService) private readonly opsService: OpsService,
   ) {}
 
   @Get()

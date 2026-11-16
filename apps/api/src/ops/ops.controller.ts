@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Controller, Get, Post, UseGuards } from "@nestjs/common";
+import { HttpException, HttpStatus, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { Roles } from "../auth/roles.decorator";
 import { RolesGuard } from "../auth/roles.guard";
@@ -7,7 +7,7 @@ import { OpsService } from "./ops.service";
 @Controller("ops")
 @UseGuards(JwtAuthGuard)
 export class OpsController {
-  constructor(private readonly opsService: OpsService) {}
+  constructor(@Inject(OpsService) private readonly opsService: OpsService) {}
 
   @Get("worker-status")
   async workerStatus() {
