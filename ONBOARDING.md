@@ -15,8 +15,15 @@ ahead tends to reproduce them.
 - A GitHub account. Ask Almir (almir.junuzovic@bicomsystems.com) to add you
   as a collaborator on `almirjunuzovic-bicom/customer_platform` (private
   repo - temporary home until Bicom's internal Git is ready).
-- An SSH key pair. If you don't have one: `ssh-keygen -t ed25519`, then add
-  the public key to your GitHub account (Settings -> SSH and GPG keys).
+- An SSH key pair **generated on the App VM itself, after step 1** - not on
+  your laptop. Since you work directly on the App VM (see step 9), that's
+  the machine that needs to authenticate to GitHub, not your laptop:
+  ```bash
+  ssh-keygen -t ed25519 -C "you@bicomsystems.com"
+  cat ~/.ssh/id_ed25519.pub
+  ```
+  Add that public key to your GitHub account (Settings -> SSH and GPG
+  keys), then confirm the clone step in section 2 works.
 
 ## 1. Create two VPS instances
 
@@ -55,6 +62,12 @@ compiled in. Confirmed the hard way:
 SSH in, then:
 
 ```bash
+# ca-certificates - the SERVERware Ubuntu 24.04 template does NOT include
+# this by default (confirmed live on a fresh VPS), which breaks every
+# HTTPS curl call below with "error setting certificate file:
+# /etc/ssl/certs/ca-certificates.crt" until this runs.
+sudo apt-get update && sudo apt-get install -y ca-certificates curl
+
 # Node.js - via NodeSource's official apt repo, NOT the Ubuntu-bundled
 # nodejs package (too old) and NOT nvm (fine either way, but this is what
 # was proven to work). Need >=20 (repo's root package.json requires it) -
@@ -73,17 +86,54 @@ sudo usermod -aG docker $USER
 # log out and back in for the group change to apply
 ```
 
-Clone the repo:
+Clone the repo. A fresh VM has never talked to GitHub before, so trust its
+host key first (confirmed real live - without this, `git clone` fails with
+"Host key verification failed" before it even gets to checking your key):
 
 ```bash
+ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts
+
 git clone git@github.com:almirjunuzovic-bicom/customer_platform.git /opt/hosting-platform
 cd /opt/hosting-platform
 pnpm install
+
+# pnpm blocks some dependencies' build/postinstall scripts by default until
+# approved (confirmed live: install succeeds but prints "Agent skills
+# awaiting approval" - silently skipping those scripts if you ignore it).
+pnpm approve --all --yes
 ```
 
 ## 3. DB VM setup
 
-SSH in, then:
+### Give it internet access for package installs
+
+The DB VM has **no public IP by design**, which also means it has **zero
+internet access** - confirmed live (`apt-get update` fails resolving DNS,
+and pinging `8.8.8.8`/`1.1.1.1` by IP also fails - it's not just DNS, there
+is no route out at all). `apt-get install` will hang or fail until it can
+reach a package mirror, so do this first, from the **App VM**:
+
+```bash
+sudo apt-get install -y apt-cacher-ng
+# bind it to the private network only, not every interface (same
+# principle as MySQL's bind-address below - don't expose it publicly)
+echo "BindAddress: <App VM's private IP>" | sudo tee -a /etc/apt-cacher-ng/acng.conf
+sudo systemctl restart apt-cacher-ng
+```
+
+Then on the **DB VM**, point apt at it through the private network:
+
+```bash
+echo 'Acquire::http::Proxy "http://<App VM's private IP>:3142";' | sudo tee /etc/apt/apt.conf.d/01proxy
+```
+
+This keeps the DB VM's "private IP only, no public IP" isolation intact for
+its entire lifetime - no need to ever give it a public IP, even
+temporarily, just to run `apt-get`.
+
+### Install and configure MySQL
+
+SSH into the DB VM, then:
 
 ```bash
 sudo apt-get update && sudo apt-get install -y mysql-server
@@ -204,10 +254,15 @@ production deployment uses systemd services instead of `*:dev` scripts
 (see `apps/api/deploy/*.service`) - not necessary for your own dev box,
 only mentioned so you recognize that pattern if you see it elsewhere.)
 
-From your own laptop, tunnel in to view the frontend:
+From your own laptop, tunnel in to view the frontend. Note the API's port
+forward targets the VM's **private IP**, not `127.0.0.1` - confirmed live
+that this matters: the API binds to `API_HOST` from `apps/api/.env` (your
+private IP, per step 5), not to loopback, so forwarding to `127.0.0.1:3001`
+on the remote end fails with "connection refused" even though the API is
+actually running fine:
 
 ```bash
-ssh -L 5173:127.0.0.1:5173 -L 3001:127.0.0.1:3001 you@<app-vm-public-ip>
+ssh -L 5173:127.0.0.1:5173 -L 3001:<app-vm-private-ip>:3001 you@<app-vm-public-ip>
 ```
 
 Then open `http://localhost:5173` in your own browser.
