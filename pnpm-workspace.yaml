@@ -9,3 +9,7 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - "@nestjs/bull-shared@12.0.2"
   - "@nestjs/bullmq@12.0.2"
+
+permissions:
+  '@tanstack/react-router':
+    skills: true

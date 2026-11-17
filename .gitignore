@@ -14,6 +14,9 @@ id_rsa*
 *.docx
 *.docx.pdf
 
+# AI setup prompt - local tool, not part of the repo
+/prompt.txt
+
 # Dependencies
 node_modules/
 .pnpm-store/
@@ -31,3 +34,4 @@ npm-debug.log*
 .vscode/
 .idea/
 .DS_Store
+.claude/
