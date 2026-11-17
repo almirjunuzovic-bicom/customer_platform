@@ -1,0 +1,32 @@
+# Local dev stack - MySQL + Redis on your own laptop, nothing shared with
+# anyone else. Normal Docker bridge networking (not host mode) - the
+# "raw" iptables table that forces network_mode: host in docker-compose.yml
+# is a limitation of SERVERware's VM kernel template, not your laptop's
+# regular Ubuntu kernel. Ports are published to 127.0.0.1 only - never
+# exposed to your LAN.
+services:
+  mysql:
+    image: mysql:8
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: hosting_platform
+      MYSQL_USER: hosting_app
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+    volumes:
+      - mysql-dev-data:/var/lib/mysql
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-dev-data:/data
+    command: redis-server --requirepass ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+
+volumes:
+  mysql-dev-data:
+  redis-dev-data:
