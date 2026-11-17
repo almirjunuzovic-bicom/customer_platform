@@ -2,7 +2,15 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { eq, inArray } from "drizzle-orm";
 import { decryptJson, encryptJson } from "../common/crypto";
 import { DATABASE, type Database } from "../db/database.module";
-import { hosts, partitions, sources, vpsEvents, vpsInventory, vpsMetricsHistory } from "../db/schema";
+import {
+  hosts,
+  partitions,
+  sources,
+  vpsEvents,
+  vpsInventory,
+  vpsMetricsHistory,
+  vpsMetricsRollup,
+} from "../db/schema";
 import { SourceUnavailableError, type ConnectorType, type ResolvedSource } from "./connector.types";
 
 export interface CreateSourceInput {
@@ -110,6 +118,7 @@ export class SourcesService {
 
       if (vpsIds.length > 0) {
         await tx.delete(vpsMetricsHistory).where(inArray(vpsMetricsHistory.vpsInventoryId, vpsIds));
+        await tx.delete(vpsMetricsRollup).where(inArray(vpsMetricsRollup.vpsInventoryId, vpsIds));
         await tx.delete(vpsEvents).where(inArray(vpsEvents.vpsInventoryId, vpsIds));
       }
       await tx.delete(vpsInventory).where(eq(vpsInventory.sourceId, id));
