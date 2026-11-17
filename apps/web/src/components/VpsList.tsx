@@ -110,7 +110,10 @@ export function VpsList({ sourceId, title = "All VPSes" }: { sourceId?: number; 
             Failed to load VPS list: {(error as Error).message}
           </p>
         )}
-        {data && (
+        {data && data.length === 0 && (
+          <p className="text-sm text-muted-foreground">No VPSes found.</p>
+        )}
+        {data && data.length > 0 && (
           <Table>
             <TableHeader>
               <TableRow>
