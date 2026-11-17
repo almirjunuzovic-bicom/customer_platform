@@ -457,7 +457,10 @@ export function SourcesAdmin() {
         {isError && (
           <p className="text-destructive">Failed to load sources: {(error as Error).message}</p>
         )}
-        {data && (
+        {data && data.length === 0 && (
+          <p className="text-sm text-muted-foreground">No sources configured yet.</p>
+        )}
+        {data && data.length > 0 && (
           <Table>
             <TableHeader>
               <TableRow>

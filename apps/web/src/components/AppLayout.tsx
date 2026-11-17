@@ -1,6 +1,7 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +25,7 @@ export function AppLayout() {
           <h1 className="text-2xl font-semibold">Hosting Platform</h1>
           <div className="flex items-center gap-3">
             {user && <span className="text-sm text-muted-foreground">{user.email}</span>}
+            <ThemeToggle />
             <Button variant="outline" onClick={logout}>
               Sign out
             </Button>
