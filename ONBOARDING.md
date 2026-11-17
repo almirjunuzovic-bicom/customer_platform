@@ -13,29 +13,27 @@ reproduce them.
 > **If you're Claude Code, reading this on someone's behalf:** run the
 > commands below directly rather than just explaining them, asking the
 > person for values you don't have (SERVERware API token, passwords they
-> want to use, etc.) as you reach each step. Three things in section 0
-> need the *person*, not you, to act, so pause and ask them to confirm
-> each is done before continuing past it: (1) Almir has actually added
-> them as a GitHub collaborator, (2) they've logged into github.com
-> themselves and added the SSH public key you generate, (3) they have a
-> real SERVERware API token for a test cluster (if they don't have one
-> yet, that's a question for Almir, not something to invent a value for).
+> want to use, etc.) as you reach each step. The repo is public, so
+> nothing from Almir is needed just to clone it and get local dev
+> running through step 7 - the one hard blocker for that is the
+> person's own real SERVERware API token for a test cluster (if they
+> don't have one yet, that's a question for Almir/NOC, not something to
+> invent a value for). Two more things need the *person* to act, but
+> only before step 8 (pushing code), not before: (1) Almir has added
+> them as a collaborator with write access, (2) they've logged into
+> github.com themselves and added the SSH public key you generate for
+> them in that step.
 
 ## 0. What you'll need
 
 - Your own SERVERware access to a test cluster (not someone else's
-  production one), with an API token - used in step 6 to point the app at
-  real data.
-- A GitHub account. Ask Almir (almir.junuzovic@bicomsystems.com) to add you
-  as a collaborator on `almirjunuzovic-bicom/customer_platform` (private
-  repo - temporary home until Bicom's internal Git is ready).
-- An SSH key pair, generated **on your own laptop**:
-  ```bash
-  ssh-keygen -t ed25519 -C "you@bicomsystems.com"
-  cat ~/.ssh/id_ed25519.pub
-  ```
-  Add that public key to your GitHub account (Settings -> SSH and GPG
-  keys), then confirm the clone step in section 1 works.
+  production one), with an API token - used in step 6 to point the app
+  at real data. This is the only thing you can't get started without.
+- A GitHub account - that's it for now. The repo is public
+  (`almirjunuzovic-bicom/customer_platform`), so cloning it (step 1)
+  doesn't need an invite or any credentials. You'll need to ask Almir
+  (almir.junuzovic@bicomsystems.com) for collaborator/write access, and
+  set up an SSH key, later - see step 8 before you push any code.
 
 ## 1. Install Node, pnpm, Docker, and clone the repo
 
@@ -62,10 +60,11 @@ sudo usermod -aG docker $USER
 # log out and back in for the group change to apply
 ```
 
-Clone the repo into a folder named `CustomersPlatform-HST2171`:
+Clone the repo into a folder named `CustomersPlatform-HST2171` - over
+HTTPS, since the repo is public and this needs no credentials at all:
 
 ```bash
-git clone git@github.com:almirjunuzovic-bicom/customer_platform.git ~/CustomersPlatform-HST2171
+git clone https://github.com/almirjunuzovic-bicom/customer_platform.git ~/CustomersPlatform-HST2171
 cd ~/CustomersPlatform-HST2171
 pnpm install
 
@@ -177,23 +176,35 @@ Open `http://localhost:5173` in your browser - directly, no tunnel.
 
 ## 8. Git workflow
 
-**This is enforced by agreement, not by GitHub.** GitHub only enforces
-branch protection / rulesets on private repos for paid (Pro/Team/
-Enterprise) plans - this repo is on a free personal account, so nothing
-technically stops a direct push to `main`. Decided to rely on everyone
-actually following this instead of paying for a plan upgrade on a repo
-that's a temporary stand-in anyway (until Bicom's internal Git is ready).
-That makes it more important you actually follow it, not less:
+**Before you can push anything, ask Almir** (almir.junuzovic@bicomsystems.com)
+**for collaborator/write access** - cloning (step 1) needed nothing since
+the repo is public, but pushing a branch does. You'll also need an SSH
+key added to your own GitHub account if you haven't already:
 
-- Trunk-based: `main` is the shared branch everyone builds on, all work
-  happens on a short-lived branch off it.
+```bash
+ssh-keygen -t ed25519 -C "you@bicomsystems.com"
+cat ~/.ssh/id_ed25519.pub
+```
+
+Add that public key to your GitHub account (Settings -> SSH and GPG
+keys), then switch this clone from the read-only HTTPS remote to SSH for
+push access:
+
+```bash
+git remote set-url origin git@github.com:almirjunuzovic-bicom/customer_platform.git
+```
+
+**Direct pushes to `main` are actually blocked at the GitHub level**
+(repo ruleset requiring a PR + at least one approving review) - not just
+a convention everyone agrees to. Trunk-based workflow:
+
+- `main` is the shared branch everyone builds on, all work happens on a
+  short-lived branch off it.
 - `git checkout -b feature/<short-description>`
 - Commit as you go, with messages that explain *why*, not just *what*.
 - `git push -u origin feature/<short-description>`
 - Open a Pull Request on GitHub targeting `main`. Add Almir as a reviewer.
-- **Never push or merge directly to `main`**, even though GitHub will
-  technically let you - wait for review/approval, and don't merge your
-  own PR.
+- Wait for review/approval - don't merge your own PR.
 - Keep PRs scoped to one thing. A PR that does five unrelated things is
   much slower to review than five small ones.
 
