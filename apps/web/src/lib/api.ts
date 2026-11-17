@@ -90,6 +90,11 @@ export interface VpsEvent {
   actorUserId: number | null;
 }
 
+export interface FleetEvent extends VpsEvent {
+  vpsName: string;
+  sourceId: number;
+}
+
 export interface MetricSummary {
   peak: number | null;
   avg: number | null;
@@ -233,6 +238,22 @@ export const api = {
     return request<HistorySummary>(`/vps/${id}/history/summary${qs ? `?${qs}` : ""}`);
   },
   vpsEvents: (id: number) => request<VpsEvent[]>(`/vps/${id}/events`),
+  events: (filters?: {
+    sourceId?: number;
+    eventType?: VpsEventType;
+    from?: string;
+    to?: string;
+    limit?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (filters?.sourceId != null) query.set("sourceId", String(filters.sourceId));
+    if (filters?.eventType) query.set("eventType", filters.eventType);
+    if (filters?.from) query.set("from", filters.from);
+    if (filters?.to) query.set("to", filters.to);
+    if (filters?.limit != null) query.set("limit", String(filters.limit));
+    const qs = query.toString();
+    return request<FleetEvent[]>(`/events${qs ? `?${qs}` : ""}`);
+  },
   vpsAction: (id: number, action: VpsAction) =>
     request<{ status: string; action: string; vpsId: number }>(
       `/vps/${id}/actions/${action}`,
