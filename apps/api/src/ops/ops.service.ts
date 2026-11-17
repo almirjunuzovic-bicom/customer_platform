@@ -15,11 +15,38 @@ const execFileAsync = promisify(execFile);
 // injection surface regardless.
 const WORKER_SERVICE = "hosting-platform-worker";
 
+// Only meaningful on the shared staging VM, where this unit (and
+// passwordless sudo for it) actually exists - see STAGING.md. On a local
+// dev laptop (see ONBOARDING.md), the worker is just a plain `pnpm
+// worker:dev` process, no systemd unit at all, so `systemctl is-active`
+// correctly reports "inactive" and a bare `sudo systemctl restart` fails
+// outright (no TTY for the password prompt, confirmed live on a real
+// local dev machine) - distinguishing "not managed here" from "genuinely
+// stopped" avoids both a misleading status badge and a confusing raw
+// sudo error reaching the UI.
 @Injectable()
 export class OpsService {
   private readonly logger = new Logger(OpsService.name);
 
+  private async unitLoadState(): Promise<string> {
+    try {
+      const { stdout } = await execFileAsync("systemctl", [
+        "show",
+        "-p",
+        "LoadState",
+        "--value",
+        WORKER_SERVICE,
+      ]);
+      return stdout.trim();
+    } catch {
+      return "unknown";
+    }
+  }
+
   async workerStatus(): Promise<{ service: string; active: boolean; state?: string }> {
+    if ((await this.unitLoadState()) !== "loaded") {
+      return { service: WORKER_SERVICE, active: false, state: "not managed here (local dev?)" };
+    }
     try {
       const { stdout } = await execFileAsync("systemctl", ["is-active", WORKER_SERVICE]);
       return { service: WORKER_SERVICE, active: stdout.trim() === "active" };
@@ -32,6 +59,12 @@ export class OpsService {
   }
 
   async restartWorker(): Promise<void> {
+    if ((await this.unitLoadState()) !== "loaded") {
+      throw new Error(
+        "This environment doesn't manage the worker via systemd (local dev?) - " +
+          "restart your own `pnpm worker:dev` process manually instead.",
+      );
+    }
     await execFileAsync("sudo", ["systemctl", "restart", WORKER_SERVICE]);
   }
 
