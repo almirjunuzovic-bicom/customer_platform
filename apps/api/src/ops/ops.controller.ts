@@ -14,6 +14,41 @@ export class OpsController {
     return this.opsService.workerStatus();
   }
 
+  @Get("dev-status")
+  async devStatus() {
+    return this.opsService.devStatus();
+  }
+
+  @Post("start-worker")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("admin")
+  async startWorker() {
+    try {
+      await this.opsService.startWorker();
+      return { status: "started", service: "hosting-platform-worker" };
+    } catch (error) {
+      throw new HttpException(
+        `Failed to start worker: ${String(error)}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post("stop-worker")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("admin")
+  async stopWorker() {
+    try {
+      await this.opsService.stopWorker();
+      return { status: "stopped", service: "hosting-platform-worker" };
+    } catch (error) {
+      throw new HttpException(
+        `Failed to stop worker: ${String(error)}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   @Post("restart-worker")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("admin")

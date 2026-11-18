@@ -35,6 +35,7 @@ export function AppLayout() {
           <NavLink to="/">Topology</NavLink>
           <NavLink to="/vps">All VPSes</NavLink>
           <NavLink to="/sources">Sources</NavLink>
+          <NavLink to="/dev">Dev</NavLink>
         </div>
         <Outlet />
       </div>

@@ -1,5 +1,6 @@
 import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import { AppLayout } from "@/components/AppLayout";
+import { DevStatus } from "@/components/DevStatus";
 import { SourceDetail } from "@/components/SourceDetail";
 import { SourcesAdmin } from "@/components/SourcesAdmin";
 import { Topology } from "@/components/Topology";
@@ -45,12 +46,21 @@ const vpsDetailRoute = createRoute({
   component: VpsDetail,
 });
 
+// Temporary - see hst2171-architecture ("Dev status" page). Remove once
+// the team has a better ops story than a browser tab.
+const devStatusRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/dev",
+  component: DevStatus,
+});
+
 const routeTree = rootRoute.addChildren([
   topologyRoute,
   vpsListRoute,
   sourcesRoute,
   sourceDetailRoute,
   vpsDetailRoute,
+  devStatusRoute,
 ]);
 
 export const router = createRouter({ routeTree });
