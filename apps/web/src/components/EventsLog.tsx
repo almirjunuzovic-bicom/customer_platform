@@ -45,6 +45,7 @@ function EventRow({ event }: { event: FleetEvent }) {
         {event.previousValue ? `${event.previousValue} → ${event.newValue}` : event.newValue}
       </TableCell>
       <TableCell className="text-muted-foreground">{event.source}</TableCell>
+      <TableCell className="text-muted-foreground">{event.actorName ?? "-"}</TableCell>
     </TableRow>
   );
 }
@@ -101,6 +102,7 @@ export function EventsLog() {
                 <TableHead>Event type</TableHead>
                 <TableHead>Change</TableHead>
                 <TableHead>Source</TableHead>
+                <TableHead>Requested by</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

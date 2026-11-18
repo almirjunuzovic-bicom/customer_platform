@@ -2,7 +2,7 @@ import { BadRequestException, Controller, Get, Inject, Query, UseGuards } from "
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { DATABASE, type Database } from "../db/database.module";
-import { vpsEvents, vpsInventory } from "../db/schema";
+import { users, vpsEvents, vpsInventory } from "../db/schema";
 
 // Mirrors vpsEventTypeEnum in schema.ts - duplicated here rather than
 // imported since mysqlEnum doesn't expose its value list as a plain
@@ -91,9 +91,14 @@ export class EventsController {
         detectedAt: vpsEvents.detectedAt,
         source: vpsEvents.source,
         actorUserId: vpsEvents.actorUserId,
+        // null for poll_detected rows (no actor) and for a platform_action
+        // whose actor was since deleted - either way, absent name is a
+        // normal case for the frontend to render as "-", not an error.
+        actorName: users.name,
       })
       .from(vpsEvents)
       .innerJoin(vpsInventory, eq(vpsEvents.vpsInventoryId, vpsInventory.id))
+      .leftJoin(users, eq(vpsEvents.actorUserId, users.id))
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(vpsEvents.detectedAt))
       .limit(limitNum);

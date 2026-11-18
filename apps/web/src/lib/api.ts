@@ -106,6 +106,7 @@ export interface VpsEvent {
   detectedAt: string;
   source: "poll_detected" | "platform_action";
   actorUserId: number | null;
+  actorName: string | null;
 }
 
 export interface FleetEvent extends VpsEvent {
