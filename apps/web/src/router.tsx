@@ -1,6 +1,7 @@
 import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import { AppLayout } from "@/components/AppLayout";
 import { DevStatus } from "@/components/DevStatus";
+import { EventsLog } from "@/components/EventsLog";
 import { SourceDetail } from "@/components/SourceDetail";
 import { SourcesAdmin } from "@/components/SourcesAdmin";
 import { Topology } from "@/components/Topology";
@@ -26,6 +27,12 @@ const vpsListRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/vps",
   component: VpsList,
+});
+
+const eventsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/events",
+  component: EventsLog,
 });
 
 const sourcesRoute = createRoute({
@@ -61,6 +68,7 @@ const routeTree = rootRoute.addChildren([
   sourceDetailRoute,
   vpsDetailRoute,
   devStatusRoute,
+  eventsRoute,
 ]);
 
 export const router = createRouter({ routeTree });
