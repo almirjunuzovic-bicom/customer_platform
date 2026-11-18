@@ -16,6 +16,24 @@ export interface Source {
   lastSyncError: string | null;
 }
 
+export interface WorkerStatus {
+  managed: "systemd" | "process";
+  active: boolean;
+  state?: string;
+  pid?: number;
+}
+
+export interface HealthCheck {
+  ok: boolean;
+  error?: string;
+}
+
+export interface DevStatus {
+  worker: WorkerStatus;
+  db: HealthCheck;
+  redis: HealthCheck;
+}
+
 export interface Partition {
   id: number;
   sourceId: number;
@@ -205,8 +223,12 @@ export const api = {
     request<{ key: string }>(`/sources/${id}`, "DELETE", { confirmKey }),
   callStats: (sourceId: number) => request<CallStats>(`/sources/${sourceId}/call-stats`),
   sourceOverview: (sourceId: number) => request<SourceOverview>(`/sources/${sourceId}/overview`),
-  workerStatus: () =>
-    request<{ service: string; active: boolean; state?: string }>("/ops/worker-status"),
+  workerStatus: () => request<WorkerStatus>("/ops/worker-status"),
+  devStatus: () => request<DevStatus>("/ops/dev-status"),
+  startWorker: () =>
+    request<{ status: string; service: string }>("/ops/start-worker", "POST"),
+  stopWorker: () =>
+    request<{ status: string; service: string }>("/ops/stop-worker", "POST"),
   restartWorker: () =>
     request<{ status: string; service: string }>("/ops/restart-worker", "POST"),
   partitions: () => request<Partition[]>("/partitions"),

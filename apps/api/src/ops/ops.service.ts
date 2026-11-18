@@ -1,6 +1,9 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
+import { sql } from "drizzle-orm";
+import Redis from "ioredis";
+import { DATABASE, type Database } from "../db/database.module";
 
 const execFileAsync = promisify(execFile);
 
@@ -15,18 +18,41 @@ const execFileAsync = promisify(execFile);
 // injection surface regardless.
 const WORKER_SERVICE = "hosting-platform-worker";
 
+// Matches the local dev script's argv (`tsx watch src/worker.ts`). Only
+// ever consulted when unitLoadState() says the systemd unit isn't loaded
+// (see below) - on a real systemd-managed box this branch is never taken,
+// so there's no chance of this pattern colliding with anything there.
+const WORKER_PROCESS_PATTERN = "src/worker.ts";
+
+export interface WorkerStatus {
+  managed: "systemd" | "process";
+  active: boolean;
+  state?: string;
+  pid?: number;
+}
+
+export interface HealthCheck {
+  ok: boolean;
+  error?: string;
+}
+
+export interface DevStatus {
+  worker: WorkerStatus;
+  db: HealthCheck;
+  redis: HealthCheck;
+}
+
 // Only meaningful on the shared staging VM, where this unit (and
-// passwordless sudo for it) actually exists - see STAGING.md. On a local
-// dev laptop (see ONBOARDING.md), the worker is just a plain `pnpm
-// worker:dev` process, no systemd unit at all, so `systemctl is-active`
-// correctly reports "inactive" and a bare `sudo systemctl restart` fails
-// outright (no TTY for the password prompt, confirmed live on a real
-// local dev machine) - distinguishing "not managed here" from "genuinely
-// stopped" avoids both a misleading status badge and a confusing raw
-// sudo error reaching the UI.
+// passwordless sudo for it) actually exists - see ONBOARDING.md. On a
+// local dev laptop, the worker is just a plain `pnpm worker:dev` process,
+// no systemd unit at all - distinguishing the two lets this service
+// actually manage the worker either way instead of only working on
+// staging and telling local dev to do it by hand.
 @Injectable()
 export class OpsService {
   private readonly logger = new Logger(OpsService.name);
+
+  constructor(@Inject(DATABASE) private readonly db: Database) {}
 
   private async unitLoadState(): Promise<string> {
     try {
@@ -43,29 +69,85 @@ export class OpsService {
     }
   }
 
-  async workerStatus(): Promise<{ service: string; active: boolean; state?: string }> {
-    if ((await this.unitLoadState()) !== "loaded") {
-      return { service: WORKER_SERVICE, active: false, state: "not managed here (local dev?)" };
-    }
+  /** pgrep exits 1 with empty stdout when nothing matches - not a real error. */
+  private async findWorkerPids(): Promise<number[]> {
     try {
-      const { stdout } = await execFileAsync("systemctl", ["is-active", WORKER_SERVICE]);
-      return { service: WORKER_SERVICE, active: stdout.trim() === "active" };
-    } catch (error) {
-      // `systemctl is-active` exits non-zero for inactive/failed units -
-      // that's a normal result here, not a failure to report as 500.
-      const stdout = (error as { stdout?: string }).stdout;
-      return { service: WORKER_SERVICE, active: false, state: stdout?.trim() ?? "unknown" };
+      const { stdout } = await execFileAsync("pgrep", ["-f", WORKER_PROCESS_PATTERN]);
+      return stdout
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map(Number);
+    } catch {
+      return [];
+    }
+  }
+
+  async workerStatus(): Promise<WorkerStatus> {
+    if ((await this.unitLoadState()) === "loaded") {
+      try {
+        const { stdout } = await execFileAsync("systemctl", ["is-active", WORKER_SERVICE]);
+        return { managed: "systemd", active: stdout.trim() === "active" };
+      } catch (error) {
+        // `systemctl is-active` exits non-zero for inactive/failed units -
+        // that's a normal result here, not a failure to report as 500.
+        const stdout = (error as { stdout?: string }).stdout;
+        return { managed: "systemd", active: false, state: stdout?.trim() ?? "unknown" };
+      }
+    }
+    const pids = await this.findWorkerPids();
+    return { managed: "process", active: pids.length > 0, pid: pids[0] };
+  }
+
+  async startWorker(): Promise<void> {
+    if ((await this.unitLoadState()) === "loaded") {
+      await execFileAsync("sudo", ["systemctl", "start", WORKER_SERVICE]);
+      return;
+    }
+    if ((await this.findWorkerPids()).length > 0) return; // already running
+    // detached + unref so this survives the API process's own tsx-watch
+    // restarts - cwd is apps/api in both dev (`tsx watch src/api.ts`) and
+    // prod (systemd WorkingDirectory), so process.cwd() is reliable here.
+    const child = spawn("pnpm", ["run", "worker:dev"], {
+      cwd: process.cwd(),
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+  }
+
+  async stopWorker(): Promise<void> {
+    if ((await this.unitLoadState()) === "loaded") {
+      await execFileAsync("sudo", ["systemctl", "stop", WORKER_SERVICE]);
+      return;
+    }
+    const pids = await this.findWorkerPids();
+    for (const pid of pids) {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        // already gone
+      }
+    }
+    for (let i = 0; i < 10 && (await this.findWorkerPids()).length > 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    for (const pid of await this.findWorkerPids()) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // already gone
+      }
     }
   }
 
   async restartWorker(): Promise<void> {
-    if ((await this.unitLoadState()) !== "loaded") {
-      throw new Error(
-        "This environment doesn't manage the worker via systemd (local dev?) - " +
-          "restart your own `pnpm worker:dev` process manually instead.",
-      );
+    if ((await this.unitLoadState()) === "loaded") {
+      await execFileAsync("sudo", ["systemctl", "restart", WORKER_SERVICE]);
+      return;
     }
-    await execFileAsync("sudo", ["systemctl", "restart", WORKER_SERVICE]);
+    await this.stopWorker();
+    await this.startWorker();
   }
 
   /**
@@ -85,5 +167,44 @@ export class OpsService {
     } catch (error) {
       this.logger.warn(`Auto-restart of worker failed: ${String(error)}`);
     }
+  }
+
+  private async checkDb(): Promise<HealthCheck> {
+    try {
+      await this.db.execute(sql`SELECT 1`);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: String(error) };
+    }
+  }
+
+  private async checkRedis(): Promise<HealthCheck> {
+    const client = new Redis({
+      host: process.env.REDIS_HOST,
+      port: Number(process.env.REDIS_PORT ?? 6379),
+      password: process.env.REDIS_PASSWORD,
+      lazyConnect: true,
+      retryStrategy: () => null,
+      maxRetriesPerRequest: 1,
+    });
+    try {
+      await client.connect();
+      const pong = await client.ping();
+      return { ok: pong === "PONG" };
+    } catch (error) {
+      return { ok: false, error: String(error) };
+    } finally {
+      client.disconnect();
+    }
+  }
+
+  /** Aggregate view for the (temporary) Dev status page - see hst2171-architecture. */
+  async devStatus(): Promise<DevStatus> {
+    const [worker, db, redis] = await Promise.all([
+      this.workerStatus(),
+      this.checkDb(),
+      this.checkRedis(),
+    ]);
+    return { worker, db, redis };
   }
 }
