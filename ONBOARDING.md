@@ -174,6 +174,19 @@ cd apps/web && pnpm exec vite --host 127.0.0.1
 
 Open `http://localhost:5173` in your browser - directly, no tunnel.
 
+**After `git pull`ing a merge, your running `api:dev`/`worker:dev` should
+pick up the change automatically** - `tsx watch`'s file watcher
+(`CHOKIDAR_USEPOLLING=1`, already set in both scripts) polls for changes
+instead of relying on inotify, specifically because inotify can lose
+track of a file after `git checkout`/`pull` replaces it (rename, not an
+in-place edit) and then silently keep serving stale code with no error.
+If your terminal has been running since before this fix landed, restart
+`api:dev`/`worker:dev` once to pick up the new script - after that you
+shouldn't need to again. If you ever see a route/field that should exist
+but doesn't (`Cannot GET /...`, a field just missing from a response),
+that's this class of bug - restart the affected process rather than
+debugging the code first.
+
 ## 8. Git workflow
 
 **Before you can push anything, ask Almir** (almir.junuzovic@bicomsystems.com)
