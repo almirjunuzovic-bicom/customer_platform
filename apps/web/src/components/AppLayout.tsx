@@ -22,7 +22,11 @@ export function AppLayout() {
     <div className="min-h-svh bg-muted/30 p-8">
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Hosting Platform</h1>
+          <div className="flex items-center gap-3">
+            <img src="/bicom-logo.png" alt="Bicom Systems" className="h-6 w-auto" />
+            <span className="h-6 w-px bg-border" />
+            <h1 className="text-2xl font-semibold">Hosting Platform</h1>
+          </div>
           <div className="flex items-center gap-3">
             {user && <span className="text-sm text-muted-foreground">{user.email}</span>}
             <ThemeToggle />
@@ -39,6 +43,18 @@ export function AppLayout() {
           <NavLink to="/dev">Dev</NavLink>
         </div>
         <Outlet />
+        <footer className="mt-4 flex items-center justify-center gap-2 border-t pt-6 text-xs text-muted-foreground">
+          <span>© {new Date().getFullYear()} Bicom Systems. All rights reserved.</span>
+          <span aria-hidden>·</span>
+          <a
+            href="https://www.bicomsystems.com"
+            target="_blank"
+            rel="noreferrer"
+            className="hover:text-foreground"
+          >
+            bicomsystems.com
+          </a>
+        </footer>
       </div>
       <Toaster />
     </div>
