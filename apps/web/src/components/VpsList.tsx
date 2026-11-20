@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { api, UnauthorizedError, type Source, type VpsInventory } from "@/lib/api";
+import { api, UnauthorizedError, type Host, type Source, type VpsInventory } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -18,19 +20,21 @@ import { VpsActions } from "@/components/VpsActions";
 function VpsRow({
   vps,
   source,
+  host,
   showSource,
 }: {
   vps: VpsInventory;
   source: Source | undefined;
+  host: Host | undefined;
   showSource: boolean;
 }) {
   return (
     <TableRow>
-      <TableCell className="font-medium">
+      <TableCell>
         <Link
           to="/vps/$vpsId"
           params={{ vpsId: String(vps.id) }}
-          className="hover:underline"
+          className="text-foreground/90 hover:text-foreground hover:underline"
         >
           {vps.name}
         </Link>
@@ -46,6 +50,7 @@ function VpsRow({
           </Link>
         </TableCell>
       )}
+      <TableCell className="text-muted-foreground">{host?.name ?? "—"}</TableCell>
       <TableCell>
         <StateBadge state={vps.lastKnownState} task={vps.task} />
       </TableCell>
@@ -91,6 +96,13 @@ export function VpsList({ sourceId, title = "All VPSes" }: { sourceId?: number; 
     enabled: showSource,
   });
   const sourcesById = new Map((sourcesQuery.data ?? []).map((s) => [s.id, s]));
+  const hostsQuery = useQuery({ queryKey: ["hosts"], queryFn: api.hosts });
+  const hostsById = new Map((hostsQuery.data ?? []).map((h) => [h.id, h]));
+
+  const [search, setSearch] = useState("");
+  const filteredData = data?.filter((vps) =>
+    vps.name.toLowerCase().includes(search.trim().toLowerCase()),
+  );
 
   return (
     <Card>
@@ -114,31 +126,47 @@ export function VpsList({ sourceId, title = "All VPSes" }: { sourceId?: number; 
           <p className="text-sm text-muted-foreground">No VPSes found.</p>
         )}
         {data && data.length > 0 && (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                {showSource && <TableHead>Source</TableHead>}
-                <TableHead>State</TableHead>
-                <TableHead>Engine</TableHead>
-                <TableHead>Platform</TableHead>
-                <TableHead>Memory</TableHead>
-                <TableHead>CPU</TableHead>
-                <TableHead>IP Addresses</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.map((vps) => (
-                <VpsRow
-                  key={vps.id}
-                  vps={vps}
-                  source={sourcesById.get(vps.sourceId)}
-                  showSource={showSource}
-                />
-              ))}
-            </TableBody>
-          </Table>
+          <div className="space-y-3">
+            <Input
+              placeholder="Filter by name…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="max-w-xs"
+            />
+            {filteredData && filteredData.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No VPSes match &ldquo;{search}&rdquo;.
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    {showSource && <TableHead>Source</TableHead>}
+                    <TableHead>Host</TableHead>
+                    <TableHead>State</TableHead>
+                    <TableHead>Engine</TableHead>
+                    <TableHead>Platform</TableHead>
+                    <TableHead>Memory</TableHead>
+                    <TableHead>CPU</TableHead>
+                    <TableHead>IP Addresses</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredData?.map((vps) => (
+                    <VpsRow
+                      key={vps.id}
+                      vps={vps}
+                      source={sourcesById.get(vps.sourceId)}
+                      host={vps.hostId != null ? hostsById.get(vps.hostId) : undefined}
+                      showSource={showSource}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
         )}
       </CardContent>
     </Card>
