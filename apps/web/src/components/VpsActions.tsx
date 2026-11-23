@@ -30,7 +30,7 @@ function ActionButton({
   vpsId: number;
   vpsName: string;
   action: VpsAction;
-  variant: "default" | "destructive" | "outline";
+  variant: "default" | "destructive" | "warning";
   /** Set when some other operation already has this VPS locked - disables
    * the button instead of letting the user hit the same 409 we already
    * know is coming. */
@@ -149,7 +149,7 @@ export function VpsActions({
             vpsId={vpsId}
             vpsName={vpsName}
             action="restart"
-            variant="outline"
+            variant="warning"
             disabledReason={disabledReason}
           />
         </>

@@ -26,6 +26,7 @@
     --color-border: var(--border);
     --color-destructive: var(--destructive);
     --color-success: var(--success);
+    --color-warning: var(--warning);
     --color-accent-foreground: var(--accent-foreground);
     --color-accent: var(--accent);
     --color-muted-foreground: var(--muted-foreground);
@@ -56,7 +57,10 @@
     --card-foreground: oklch(0.145 0 0);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
+    /* Bicom brand blue, sampled from the logo (public/bicom-logo.png) -
+       replaces shadcn's default near-black primary across every button/tab
+       that uses it, so the app reads as branded rather than generic. */
+    --primary: #1e8acb;
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.97 0 0);
     --secondary-foreground: oklch(0.205 0 0);
@@ -69,6 +73,9 @@
        Same hex works on both light/dark surfaces (validated contrast on
        both), unlike the categorical chart colors which need separate steps. */
     --success: #0ca30c;
+    /* Status "caution" (e.g. restart) - same fixed, non-themed treatment as
+       --success/--destructive above. */
+    --warning: #d97706;
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
     --ring: oklch(0.708 0 0);
@@ -99,8 +106,8 @@
     --card-foreground: oklch(0.985 0 0);
     --popover: oklch(0.205 0 0);
     --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
+    --primary: #3b9bd9;
+    --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.269 0 0);
     --secondary-foreground: oklch(0.985 0 0);
     --muted: oklch(0.269 0 0);
@@ -109,6 +116,7 @@
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
     --success: #0ca30c;
+    --warning: #d97706;
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.556 0 0);
