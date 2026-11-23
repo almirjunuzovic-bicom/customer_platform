@@ -10,6 +10,7 @@ import {
   type SourceOverview,
   type SourcePartition,
   type SourceVps,
+  type VpsIdentity,
 } from "../connectors/connector.types";
 import {
   mapCallStats,
@@ -87,6 +88,7 @@ function toSourceVps(v: ServerwareVps): SourceVps {
     cpuShare: v.cpuShare,
     ioLimit: v.ioLimit,
     diskState: v.diskState,
+    diskLimit: null, // SERVERware's sw-wcp API doesn't expose a per-VPS disk size field
     cpuUsage: v.cpuUsage,
     memUsage: v.memUsage,
     diskUsage: v.diskUsage,
@@ -190,16 +192,16 @@ export class ServerwareService implements SourceConnector {
    * performAction) - a retried restart after an ambiguous timeout could
    * double-fire against real infrastructure.
    */
-  async startVps(source: ResolvedSource, sourceVpsId: number): Promise<void> {
-    await this.performAction(source, sourceVpsId, "start");
+  async startVps(source: ResolvedSource, vps: VpsIdentity): Promise<void> {
+    await this.performAction(source, vps.sourceVpsId, "start");
   }
 
-  async stopVps(source: ResolvedSource, sourceVpsId: number): Promise<void> {
-    await this.performAction(source, sourceVpsId, "stop");
+  async stopVps(source: ResolvedSource, vps: VpsIdentity): Promise<void> {
+    await this.performAction(source, vps.sourceVpsId, "stop");
   }
 
-  async restartVps(source: ResolvedSource, sourceVpsId: number): Promise<void> {
-    await this.performAction(source, sourceVpsId, "restart");
+  async restartVps(source: ResolvedSource, vps: VpsIdentity): Promise<void> {
+    await this.performAction(source, vps.sourceVpsId, "restart");
   }
 
   private async performAction(

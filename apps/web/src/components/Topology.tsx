@@ -33,7 +33,39 @@ function UsageBar({ label, usedGb, totalGb }: { label: string; usedGb: number; t
   );
 }
 
-function SourceCard({
+/**
+ * AWS has none of SERVERware's cluster-wide concepts - no hosts (its
+ * synthetic per-region "host" rows exist only so the VPS list's Host
+ * column has something to show, not as real capacity), no partitions, and
+ * no committed-vs-total memory/storage (every instance's RAM is its own
+ * fixed bundle allocation, not drawn from a shared pool - a "used/total"
+ * bar would always read 100% and mean nothing). So this renders a
+ * different, honest stat set instead of forcing SourceOverview's shape:
+ * VPS/Running/Regions (region = one synthetic host each, see aws.types.ts),
+ * then a plain allocation total (not a usage bar) from the already-fetched
+ * VPS rows - no extra API call needed.
+ */
+function AwsSourceStats({ vps, hosts }: { vps: VpsInventory[]; hosts: Host[] }) {
+  const running = vps.filter((v) => v.lastKnownState === "RUNNING").length;
+  const totalVCpu = vps.reduce((sum, v) => sum + (v.cpuLimit ?? 0), 0);
+  const totalRamGb = vps.reduce((sum, v) => sum + (v.memLimit ?? 0), 0) / 1024;
+  const totalDiskGb = vps.reduce((sum, v) => sum + (v.diskLimit ?? 0), 0);
+
+  return (
+    <>
+      <div className="grid grid-cols-3 gap-2">
+        <Stat label="VPS" value={vps.length} />
+        <Stat label="Running" value={running} />
+        <Stat label="Regions" value={hosts.length} />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Σ {totalVCpu} vCPU · {Math.round(totalRamGb)} GB RAM · {totalDiskGb} GB disk allocated
+      </p>
+    </>
+  );
+}
+
+function ServerwareSourceStats({
   source,
   vps,
   hosts,
@@ -58,6 +90,48 @@ function SourceCard({
   const overview = overviewQuery.data;
 
   return (
+    <>
+      <div className="grid grid-cols-4 gap-2">
+        <Stat label="VPS" value={vps.length} />
+        <Stat label="Running" value={running} />
+        <Stat label="Hosts" value={`${onlineHosts}/${hosts.length}`} />
+        <Stat label="Partitions" value={partitions.length} />
+      </div>
+
+      {overview && (
+        <>
+          <div className="space-y-2">
+            <UsageBar label="Memory" usedGb={overview.memCommittedGb} totalGb={overview.memTotalGb} />
+            <UsageBar
+              label="Storage"
+              usedGb={overview.storageCommittedGb}
+              totalGb={overview.storageTotalGb}
+            />
+          </div>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <PhoneCall className="size-3.5" />
+              {overview.concurrentCalls} calls now
+            </span>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+function SourceCard({
+  source,
+  vps,
+  hosts,
+  partitions,
+}: {
+  source: Source;
+  vps: VpsInventory[];
+  hosts: Host[];
+  partitions: Partition[];
+}) {
+  return (
     <Link to="/sources/$sourceId" params={{ sourceId: String(source.id) }}>
       <Card className="h-full transition-colors hover:border-foreground/20">
         <CardHeader>
@@ -73,30 +147,10 @@ function SourceCard({
           <p className="text-xs text-muted-foreground">{source.key}</p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-4 gap-2">
-            <Stat label="VPS" value={vps.length} />
-            <Stat label="Running" value={running} />
-            <Stat label="Hosts" value={`${onlineHosts}/${hosts.length}`} />
-            <Stat label="Partitions" value={partitions.length} />
-          </div>
-
-          {overview && (
-            <>
-              <div className="space-y-2">
-                <UsageBar label="Memory" usedGb={overview.memCommittedGb} totalGb={overview.memTotalGb} />
-                <UsageBar
-                  label="Storage"
-                  usedGb={overview.storageCommittedGb}
-                  totalGb={overview.storageTotalGb}
-                />
-              </div>
-              <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <PhoneCall className="size-3.5" />
-                  {overview.concurrentCalls} calls now
-                </span>
-              </div>
-            </>
+          {source.connectorType === "aws" ? (
+            <AwsSourceStats vps={vps} hosts={hosts} />
+          ) : (
+            <ServerwareSourceStats source={source} vps={vps} hosts={hosts} partitions={partitions} />
           )}
 
           <SyncStatus source={source} />

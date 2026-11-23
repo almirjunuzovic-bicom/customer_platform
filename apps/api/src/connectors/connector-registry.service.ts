@@ -1,11 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { AwsLightsailService } from "../aws/aws.service";
 import { ServerwareService } from "../serverware/serverware.service";
 import type { ConnectorType, SourceConnector } from "./connector.types";
 import { UnsupportedConnector } from "./unsupported.connector";
 
 /**
  * One place that knows which connectorType maps to which implementation.
- * Adding a real AWS/Proxmox connector later is: write the class, implement
+ * Adding a real Proxmox connector later is: write the class, implement
  * SourceConnector, swap its UnsupportedConnector entry here for it - nothing
  * else (SyncService, VpsController) needs to change.
  */
@@ -13,10 +14,13 @@ import { UnsupportedConnector } from "./unsupported.connector";
 export class ConnectorRegistryService {
   private readonly connectors: Map<ConnectorType, SourceConnector>;
 
-  constructor(@Inject(ServerwareService) serverwareConnector: ServerwareService) {
+  constructor(
+    @Inject(ServerwareService) serverwareConnector: ServerwareService,
+    @Inject(AwsLightsailService) awsConnector: AwsLightsailService,
+  ) {
     this.connectors = new Map<ConnectorType, SourceConnector>([
       ["serverware", serverwareConnector],
-      ["aws", new UnsupportedConnector("aws")],
+      ["aws", awsConnector],
       ["proxmox", new UnsupportedConnector("proxmox")],
     ]);
   }

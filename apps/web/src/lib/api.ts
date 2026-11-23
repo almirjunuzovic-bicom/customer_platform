@@ -65,10 +65,34 @@ export interface VpsInventory {
   cpuShare: number | null;
   ioLimit: number | null;
   diskState: string | null;
+  diskLimit: number | null; // allocated disk capacity in GB (unlike memLimit, which is MB)
   ipAddresses: string[] | null;
   collectMetrics: boolean;
+  // Customer/billing annotations - manual-only for SERVERware VPSes
+  // (untouched by sync), but synced from Lightsail tags for AWS ones
+  // (overwritten on every poll - see connector.types.ts SourceVps doc and
+  // db/schema.ts vpsInventory comment).
+  customerId: string | null;
+  customerName: string | null;
+  hostingPackage: string | null;
+  notificationEmails: string[] | null;
   isRemoved: boolean;
   lastSyncedAt: string;
+}
+
+export interface UpdateVpsCustomerInput {
+  customerId?: string | null;
+  customerName?: string | null;
+  hostingPackage?: string | null;
+  notificationEmails?: string[] | null;
+}
+
+export interface UpdateVpsCustomerResponse extends VpsInventory {
+  // Set when the connector backs these fields with its own storage (AWS:
+  // Lightsail tags) and pushing the new values out there failed - the local
+  // save above still went through regardless. null = pushed fine, or this
+  // connector doesn't push at all (SERVERware).
+  pushWarning: string | null;
 }
 
 export interface Host {
@@ -242,6 +266,8 @@ export const api = {
     return request<VpsInventory[]>(`/vps${qs ? `?${qs}` : ""}`);
   },
   vpsGet: (id: number) => request<VpsInventory>(`/vps/${id}`),
+  updateVpsCustomer: (id: number, input: UpdateVpsCustomerInput) =>
+    request<UpdateVpsCustomerResponse>(`/vps/${id}/customer`, "PATCH", input),
   vpsHistory: (
     id: number,
     range?: { from?: string; to?: string; bucketSeconds?: number },

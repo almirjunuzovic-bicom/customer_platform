@@ -7,6 +7,7 @@ import "dotenv/config";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
 import * as schema from "../db/schema";
+import { AwsLightsailService } from "../aws/aws.service";
 import { ConnectorRegistryService } from "../connectors/connector-registry.service";
 import { SourcesService } from "../connectors/sources.service";
 import { ServerwareService } from "../serverware/serverware.service";
@@ -24,7 +25,10 @@ async function main() {
   });
   const db = drizzle(pool, { schema, mode: "default" });
   const sourcesService = new SourcesService(db as never);
-  const connectorRegistry = new ConnectorRegistryService(new ServerwareService());
+  const connectorRegistry = new ConnectorRegistryService(
+    new ServerwareService(),
+    new AwsLightsailService(),
+  );
   const sync = new SyncService(db as never, connectorRegistry, sourcesService);
 
   console.log(`Syncing source id ${sourceId}...`);

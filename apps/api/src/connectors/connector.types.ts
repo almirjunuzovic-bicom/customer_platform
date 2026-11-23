@@ -38,6 +38,8 @@ export interface SourceVps {
   cpuShare: number | null;
   ioLimit: number | null;
   diskState: string | null;
+  /** Allocated disk capacity in GB (unlike memLimit, which is MB) - total across every attached disk. */
+  diskLimit: number | null;
   cpuUsage: number | null;
   memUsage: number | null;
   diskUsage: number | null;
@@ -46,6 +48,29 @@ export interface SourceVps {
   collectMetrics: boolean;
   ipAddresses: string[];
   uptimeSeconds: number;
+  /**
+   * Customer/billing annotations - `undefined` (the field simply absent)
+   * means "this connector doesn't manage these, leave whatever's already in
+   * vps_inventory alone" (SERVERware's mapVps never sets them - manual-only
+   * for now, see schema.ts vpsInventory). A connector that DOES back these
+   * with its own storage (AWS: Lightsail tags, see aws.types.ts) sets all
+   * four explicitly on every sync - its own storage is the source of truth,
+   * so this overwrites any local edit with the current tag value; `null`
+   * means "connector manages this, but no value is currently set there"
+   * (clears a previously-synced value, e.g. the tag was removed).
+   */
+  customerId?: string | null;
+  customerName?: string | null;
+  hostingPackage?: string | null;
+  notificationEmails?: string[] | null;
+}
+
+/** Shape PATCH /vps/:id/customer edits - see SourceConnector.pushCustomerInfo. */
+export interface CustomerInfoFields {
+  customerId: string | null;
+  customerName: string | null;
+  hostingPackage: string | null;
+  notificationEmails: string[] | null;
 }
 
 /** Network/cluster-wide call volume - not per-VPS (confirmed live: SERVERware's
@@ -127,14 +152,39 @@ export class SourceUnavailableError extends Error {
   }
 }
 
+/**
+ * What a connector needs to act on a specific VPS. `sourceVpsId` is enough
+ * for SERVERware (its own native numeric id), but AWS's real identity is
+ * (region, instanceName) - a string - so it also gets `uuid`, which every
+ * connector already produces per-VPS (see SourceVps.uuid), to reverse that
+ * back out. A plain row from `vpsInventory` already satisfies this shape.
+ */
+export interface VpsIdentity {
+  sourceVpsId: number;
+  uuid: string;
+}
+
 export interface SourceConnector {
   readonly connectorType: ConnectorType;
   listHosts(source: ResolvedSource): Promise<SourceHost[]>;
   listVpses(source: ResolvedSource): Promise<SourceVps[]>;
   listPartitions(source: ResolvedSource): Promise<SourcePartition[]>;
-  startVps(source: ResolvedSource, sourceVpsId: number): Promise<void>;
-  stopVps(source: ResolvedSource, sourceVpsId: number): Promise<void>;
-  restartVps(source: ResolvedSource, sourceVpsId: number): Promise<void>;
+  startVps(source: ResolvedSource, vps: VpsIdentity): Promise<void>;
+  stopVps(source: ResolvedSource, vps: VpsIdentity): Promise<void>;
+  restartVps(source: ResolvedSource, vps: VpsIdentity): Promise<void>;
   getCallStats(source: ResolvedSource): Promise<CallStats>;
   getOverview(source: ResolvedSource): Promise<SourceOverview>;
+  /**
+   * Optional: connectors that back customer/billing fields with their own
+   * storage (AWS: Lightsail tags) implement this to push a local edit back
+   * out, so the source's own console and this platform always converge.
+   * Connectors without this (SERVERware, Proxmox) simply don't implement
+   * it - those fields stay manual-only, untouched by sync either way. See
+   * vps.controller.ts updateCustomer.
+   */
+  pushCustomerInfo?(
+    source: ResolvedSource,
+    vps: VpsIdentity,
+    fields: CustomerInfoFields,
+  ): Promise<void>;
 }

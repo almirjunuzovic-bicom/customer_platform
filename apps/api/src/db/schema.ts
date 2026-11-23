@@ -204,8 +204,25 @@ export const vpsInventory = mysqlTable(
     cpuShare: int("cpu_share"),
     ioLimit: bigint("io_limit", { mode: "number" }),
     diskState: varchar("disk_state", { length: 16 }),
+    // Allocated disk capacity in GB (unlike memLimit, which is MB) - total
+    // across every attached disk. null where the connector doesn't expose
+    // this (SERVERware's sw-wcp API has no per-VPS disk size field today).
+    diskLimit: int("disk_limit_gb"),
     ipAddresses: json("ip_addresses").$type<string[]>(),
     collectMetrics: boolean("collect_metrics").notNull().default(false),
+    // Manually-entered customer/billing annotations - NOT synced data, so
+    // SyncService's insert/update never lists these fields and a poll tick
+    // can't clobber them. Exist because AWS (and any future connector) has
+    // no partition/tenant concept to derive a customer from at all, unlike
+    // SERVERware's partitions.customerId - every VPS gets these regardless
+    // of connectorType, manually for now. Auto-populating them from
+    // SERVERware's own partition/customer data (and later other internal
+    // services) is a deferred follow-up, not built yet - see
+    // hst2171-architecture.
+    customerId: varchar("customer_id", { length: 32 }),
+    customerName: varchar("customer_name", { length: 128 }),
+    hostingPackage: varchar("hosting_package", { length: 128 }),
+    notificationEmails: json("notification_emails").$type<string[]>(),
     isRemoved: boolean("is_removed").notNull().default(false), // true once it stops appearing in the list
     lastSyncedAt: timestamp("last_synced_at").notNull(),
   },

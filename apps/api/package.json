@@ -7,6 +7,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "validate:serverware": "tsx src/serverware/validate-live.manual.ts",
+    "validate:aws": "tsx src/aws/validate-live.manual.ts",
     "validate:sync": "tsx src/sync/validate-live.manual.ts",
     "worker:dev": "CHOKIDAR_USEPOLLING=1 tsx watch src/worker.ts",
     "api:dev": "CHOKIDAR_USEPOLLING=1 tsx watch src/api.ts",

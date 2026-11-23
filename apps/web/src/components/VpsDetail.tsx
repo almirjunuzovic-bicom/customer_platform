@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import {
   CartesianGrid,
@@ -10,7 +10,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { api } from "@/lib/api";
+import { toast } from "sonner";
+import { api, type VpsInventory } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -334,6 +335,151 @@ function MetricDetailDialog({
   );
 }
 
+/**
+ * Manual customer/billing annotations - same on every connectorType.
+ * Nothing pulls these automatically today (not even for SERVERware, though
+ * its partitions.customerId could feed this later - deferred, not built
+ * yet); for AWS there's no connector-side data to derive them from at all,
+ * so manual entry is the only option. See db/schema.ts vpsInventory.
+ */
+function CustomerCard({ vps }: { vps: VpsInventory }) {
+  const queryClient = useQueryClient();
+  const [isEditing, setIsEditing] = useState(false);
+  const [customerId, setCustomerId] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [hostingPackage, setHostingPackage] = useState("");
+  const [notificationEmails, setNotificationEmails] = useState("");
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const emails = notificationEmails
+        .split(",")
+        .map((e) => e.trim())
+        .filter(Boolean);
+      return api.updateVpsCustomer(vps.id, {
+        customerId: customerId.trim() || null,
+        customerName: customerName.trim() || null,
+        hostingPackage: hostingPackage.trim() || null,
+        notificationEmails: emails.length > 0 ? emails : null,
+      });
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ["vps", vps.id] });
+      if (updated.pushWarning) {
+        toast.warning("Saved locally, but failed to update it on the source", {
+          description: updated.pushWarning,
+        });
+      } else {
+        toast.success("Customer details saved");
+      }
+      setIsEditing(false);
+    },
+    onError: (error) => toast.error((error as Error).message),
+  });
+
+  function startEditing() {
+    setCustomerId(vps.customerId ?? "");
+    setCustomerName(vps.customerName ?? "");
+    setHostingPackage(vps.hostingPackage ?? "");
+    setNotificationEmails((vps.notificationEmails ?? []).join(", "));
+    setIsEditing(true);
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle>Customer</CardTitle>
+          {!isEditing && (
+            <Button variant="outline" size="sm" onClick={startEditing}>
+              Edit
+            </Button>
+          )}
+        </div>
+        {vps.sourcePlatform === "aws" && (
+          <p className="text-xs text-muted-foreground">
+            Synced with this instance's Lightsail tags - editing here also updates them there.
+          </p>
+        )}
+      </CardHeader>
+      <CardContent>
+        {isEditing ? (
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              mutation.mutate();
+            }}
+          >
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="customer-id">Customer ID</Label>
+                <Input
+                  id="customer-id"
+                  value={customerId}
+                  onChange={(e) => setCustomerId(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="customer-name">Customer name</Label>
+                <Input
+                  id="customer-name"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="hosting-package">Hosting package</Label>
+                <Input
+                  id="hosting-package"
+                  value={hostingPackage}
+                  onChange={(e) => setHostingPackage(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="notification-emails">Notification emails</Label>
+                <Input
+                  id="notification-emails"
+                  placeholder="e.g. ops@example.com, billing@example.com"
+                  value={notificationEmails}
+                  onChange={(e) => setNotificationEmails(e.target.value)}
+                />
+              </div>
+            </div>
+            {mutation.isError && (
+              <p className="text-sm text-destructive">{(mutation.error as Error).message}</p>
+            )}
+            <div className="flex gap-2">
+              <Button type="submit" size="sm" disabled={mutation.isPending}>
+                {mutation.isPending ? "Saving..." : "Save"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={mutation.isPending}
+                onClick={() => setIsEditing(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <InfoRow label="Customer ID" value={vps.customerId ?? "—"} />
+            <InfoRow label="Customer name" value={vps.customerName ?? "—"} />
+            <InfoRow label="Hosting package" value={vps.hostingPackage ?? "—"} />
+            <InfoRow
+              label="Notification emails"
+              value={(vps.notificationEmails ?? []).join(", ") || "—"}
+            />
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 const EVENT_LABELS: Record<string, string> = {
   state_changed: "State changed",
   host_changed: "Host changed",
@@ -460,6 +606,7 @@ export function VpsDetail() {
             <InfoRow label="CPU share" value={vps.cpuShare ?? "—"} />
             <InfoRow label="IO limit" value={vps.ioLimit ?? "—"} />
             <InfoRow label="Disk state" value={vps.diskState ?? "—"} />
+            <InfoRow label="Disk" value={vps.diskLimit ? `${vps.diskLimit} GB` : "—"} />
             <InfoRow label="Metrics collection" value={vps.collectMetrics ? "enabled" : "disabled"} />
             <InfoRow
               label="Pending action"
@@ -468,6 +615,8 @@ export function VpsDetail() {
           </CardContent>
         </Card>
       </div>
+
+      <CustomerCard vps={vps} />
 
       <Card>
         <CardHeader>
