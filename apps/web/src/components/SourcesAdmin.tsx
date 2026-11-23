@@ -54,12 +54,12 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/lib/auth-context";
 
-// Only serverware has a real connector today (see connectors/connector.types.ts
-// on the backend) - aws/proxmox resolve to UnsupportedConnector, so their
-// config/credentials shape isn't known yet. Structured fields for the one
-// connector we know, a raw JSON fallback for the rest - no point building a
+// serverware and aws have real connectors (see connectors/connector.types.ts
+// on the backend) - proxmox still resolves to UnsupportedConnector, so its
+// config/credentials shape isn't known yet. Structured fields for the
+// connectors we know, a raw JSON fallback for the rest - no point building a
 // form for a shape nobody has decided on.
-const STRUCTURED_CONNECTOR_TYPES: ConnectorType[] = ["serverware"];
+const STRUCTURED_CONNECTOR_TYPES: ConnectorType[] = ["serverware", "aws"];
 
 function EnabledToggle({ source }: { source: Source }) {
   const { isAdmin } = useAuth();
@@ -94,6 +94,12 @@ function AddSourceForm({ onDone }: { onDone: () => void }) {
   const [baseUrl, setBaseUrl] = useState("");
   const [netId, setNetId] = useState("1");
   const [apiToken, setApiToken] = useState("");
+  // Structured aws fields - credentials are a real IAM access/secret key
+  // pair (not a single API key like SERVERware's token), regions is a
+  // comma-separated list since one account's fleet can span several.
+  const [awsAccessKeyId, setAwsAccessKeyId] = useState("");
+  const [awsSecretAccessKey, setAwsSecretAccessKey] = useState("");
+  const [awsRegions, setAwsRegions] = useState("");
   // Generic fallback for not-yet-implemented connectors
   const [configJson, setConfigJson] = useState("{}");
   const [credentialsJson, setCredentialsJson] = useState("{}");
@@ -114,7 +120,7 @@ function AddSourceForm({ onDone }: { onDone: () => void }) {
       mutation.reset();
       return null;
     }
-    if (STRUCTURED_CONNECTOR_TYPES.includes(connectorType)) {
+    if (connectorType === "serverware") {
       if (!baseUrl.trim() || !apiToken.trim()) return null;
       return {
         key: key.trim(),
@@ -122,6 +128,23 @@ function AddSourceForm({ onDone }: { onDone: () => void }) {
         connectorType,
         config: { baseUrl: baseUrl.trim(), netId: Number(netId) || 1 },
         credentials: { apiToken: apiToken.trim() },
+      };
+    }
+    if (connectorType === "aws") {
+      const regions = awsRegions
+        .split(",")
+        .map((r) => r.trim())
+        .filter(Boolean);
+      if (!awsAccessKeyId.trim() || !awsSecretAccessKey.trim() || regions.length === 0) return null;
+      return {
+        key: key.trim(),
+        name: name.trim(),
+        connectorType,
+        config: { regions },
+        credentials: {
+          accessKeyId: awsAccessKeyId.trim(),
+          secretAccessKey: awsSecretAccessKey.trim(),
+        },
       };
     }
     try {
@@ -186,7 +209,7 @@ function AddSourceForm({ onDone }: { onDone: () => void }) {
         </Select>
       </div>
 
-      {STRUCTURED_CONNECTOR_TYPES.includes(connectorType) ? (
+      {connectorType === "serverware" ? (
         <div className="space-y-3 rounded-lg border p-3">
           <div className="space-y-1.5">
             <Label htmlFor="source-base-url">Base URL</Label>
@@ -216,6 +239,39 @@ function AddSourceForm({ onDone }: { onDone: () => void }) {
               onChange={(e) => setApiToken(e.target.value)}
               autoComplete="off"
             />
+          </div>
+        </div>
+      ) : connectorType === "aws" ? (
+        <div className="space-y-3 rounded-lg border p-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="source-aws-access-key">Access key ID</Label>
+            <Input
+              id="source-aws-access-key"
+              placeholder="AKIA..."
+              value={awsAccessKeyId}
+              onChange={(e) => setAwsAccessKeyId(e.target.value)}
+              autoComplete="off"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="source-aws-secret-key">Secret access key</Label>
+            <Input
+              id="source-aws-secret-key"
+              type="password"
+              value={awsSecretAccessKey}
+              onChange={(e) => setAwsSecretAccessKey(e.target.value)}
+              autoComplete="off"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="source-aws-regions">Regions</Label>
+            <Input
+              id="source-aws-regions"
+              placeholder="e.g. ap-southeast-2, us-east-1"
+              value={awsRegions}
+              onChange={(e) => setAwsRegions(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">Comma-separated Lightsail region codes.</p>
           </div>
         </div>
       ) : (

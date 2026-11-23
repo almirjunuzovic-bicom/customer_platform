@@ -189,6 +189,28 @@ export class SyncService {
     return new Map(rows.map((r: any) => [r.nativeId, r.id]));
   }
 
+  /**
+   * Only the customer/billing fields a connector actually manages (set
+   * explicitly, even to null) - see connector.types.ts SourceVps doc. A
+   * field left `undefined` (SERVERware never sets these today) is omitted
+   * entirely here, so Drizzle's insert/update never touches that column -
+   * exactly what keeps a manual edit from being clobbered by connectors
+   * that don't have an opinion on it.
+   */
+  private connectorManagedCustomerFields(vps: SourceVps) {
+    const fields: Partial<{
+      customerId: string | null;
+      customerName: string | null;
+      hostingPackage: string | null;
+      notificationEmails: string[] | null;
+    }> = {};
+    if (vps.customerId !== undefined) fields.customerId = vps.customerId;
+    if (vps.customerName !== undefined) fields.customerName = vps.customerName;
+    if (vps.hostingPackage !== undefined) fields.hostingPackage = vps.hostingPackage;
+    if (vps.notificationEmails !== undefined) fields.notificationEmails = vps.notificationEmails;
+    return fields;
+  }
+
   private async syncVpses(
     sourceId: number,
     srcVpses: SourceVps[],
@@ -234,8 +256,10 @@ export class SyncService {
           cpuShare: vps.cpuShare,
           ioLimit: vps.ioLimit,
           diskState: vps.diskState,
+          diskLimit: vps.diskLimit,
           ipAddresses: vps.ipAddresses,
           collectMetrics: vps.collectMetrics,
+          ...this.connectorManagedCustomerFields(vps),
           isRemoved: false,
           lastSyncedAt: now,
         });
@@ -317,8 +341,10 @@ export class SyncService {
             cpuShare: vps.cpuShare,
             ioLimit: vps.ioLimit,
             diskState: vps.diskState,
+            diskLimit: vps.diskLimit,
             ipAddresses: vps.ipAddresses,
             collectMetrics: vps.collectMetrics,
+            ...this.connectorManagedCustomerFields(vps),
             isRemoved: false,
             lastSyncedAt: now,
           })

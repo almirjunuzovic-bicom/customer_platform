@@ -1,12 +1,14 @@
 import {
   BadRequestException,
   BadGatewayException,
+  Body,
   ConflictException,
   Controller,
   Get,
   Inject,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -181,6 +183,13 @@ function buildHistorySummary(aggregates: SummaryAggregates, latest: SummaryLates
       current: latest?.diskUsage ?? null,
     },
   };
+}
+
+interface UpdateVpsCustomerBody {
+  customerId?: string | null;
+  customerName?: string | null;
+  hostingPackage?: string | null;
+  notificationEmails?: string[] | null;
 }
 
 function parseDateParam(value: string, name: string): Date {
@@ -519,6 +528,73 @@ export class VpsController {
   }
 
   /**
+   * Manual customer/billing annotations - see schema.ts vpsInventory
+   * comment. Exists on every VPS regardless of connectorType: AWS has no
+   * partition/tenant concept to derive these from at all, so manual entry
+   * is the only option for it today; SERVERware VPSes can already be
+   * auto-populated from their partition later (deferred, not built yet),
+   * but can still be manually overridden here in the meantime. No Roles
+   * guard, same as performAction below - any authenticated user can edit,
+   * not admin-only.
+   */
+  @Patch(":id/customer")
+  async updateCustomer(@Param("id") id: string, @Body() body: UpdateVpsCustomerBody) {
+    const vpsId = parseIntParam(id, "id");
+    const [vps] = await this.db
+      .select({ id: vpsInventory.id })
+      .from(vpsInventory)
+      .where(eq(vpsInventory.id, vpsId))
+      .limit(1);
+    if (!vps) throw new NotFoundException(`No VPS with id ${vpsId}`);
+
+    if (
+      body.notificationEmails != null &&
+      (!Array.isArray(body.notificationEmails) ||
+        body.notificationEmails.some((e) => typeof e !== "string"))
+    ) {
+      throw new BadRequestException(`"notificationEmails" must be an array of strings`);
+    }
+
+    const update: Partial<typeof vpsInventory.$inferInsert> = {};
+    if (body.customerId !== undefined) update.customerId = body.customerId;
+    if (body.customerName !== undefined) update.customerName = body.customerName;
+    if (body.hostingPackage !== undefined) update.hostingPackage = body.hostingPackage;
+    if (body.notificationEmails !== undefined) update.notificationEmails = body.notificationEmails;
+
+    await this.db.update(vpsInventory).set(update).where(eq(vpsInventory.id, vpsId));
+    const [updated] = await this.db
+      .select()
+      .from(vpsInventory)
+      .where(eq(vpsInventory.id, vpsId))
+      .limit(1);
+
+    // Write-through: a connector that backs these fields with its own
+    // storage (AWS: Lightsail tags) pushes the new values out so its
+    // console and this platform agree either direction - see
+    // AwsLightsailService.pushCustomerInfo. Connectors without this
+    // (SERVERware, Proxmox) just skip it - stays manual-only for them.
+    // The local save above already committed regardless, so a push
+    // failure is reported as a warning, not a hard error - the next sync
+    // would reconcile it from the source's own current value anyway.
+    let pushWarning: string | null = null;
+    try {
+      const resolved = await this.sourcesService.resolve(updated.sourceId);
+      const connector = this.connectorRegistry.get(resolved.connectorType);
+      await connector.pushCustomerInfo?.(resolved, updated, {
+        customerId: updated.customerId,
+        customerName: updated.customerName,
+        hostingPackage: updated.hostingPackage,
+        notificationEmails: updated.notificationEmails,
+      });
+    } catch (error) {
+      pushWarning =
+        error instanceof SourceUnavailableError ? error.message : String(error);
+    }
+
+    return { ...updated, pushWarning };
+  }
+
+  /**
    * Fires the action and returns immediately once the source has accepted
    * it - this does NOT mean the VPS has actually changed state yet. Per
    * SERVERWARE_API.md §0 ("never assume state changed just because this
@@ -603,11 +679,11 @@ export class VpsController {
       const connector = this.connectorRegistry.get(resolved.connectorType);
       const typedAction = action as VpsAction;
       if (typedAction === "start") {
-        await connector.startVps(resolved, vps.sourceVpsId);
+        await connector.startVps(resolved, vps);
       } else if (typedAction === "stop") {
-        await connector.stopVps(resolved, vps.sourceVpsId);
+        await connector.stopVps(resolved, vps);
       } else {
-        await connector.restartVps(resolved, vps.sourceVpsId);
+        await connector.restartVps(resolved, vps);
       }
     } catch (error) {
       // The call never actually landed on the source's side - release our
