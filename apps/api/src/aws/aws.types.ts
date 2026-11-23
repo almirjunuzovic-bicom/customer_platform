@@ -118,10 +118,11 @@ function parseNotificationEmailsTag(value: string | null): string[] | null {
   return emails.length > 0 ? emails : null;
 }
 
+// Only the public IP - private/ipv6 aren't useful here (per the user, see
+// hst2171-aws-connector memory), unlike SERVERware's ipAddresses which only
+// ever carries the one address a customer actually connects to anyway.
 function instanceIpAddresses(raw: LightsailInstanceRaw): string[] {
-  return [raw.publicIpAddress, raw.privateIpAddress, ...(raw.ipv6Addresses ?? [])].filter(
-    (ip): ip is string => !!ip,
-  );
+  return raw.publicIpAddress ? [raw.publicIpAddress] : [];
 }
 
 function isRunning(raw: LightsailInstanceRaw): boolean {

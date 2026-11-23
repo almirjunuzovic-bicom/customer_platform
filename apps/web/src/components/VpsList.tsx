@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { api, UnauthorizedError, type Host, type Source, type VpsInventory } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { IpAddressList } from "@/components/CopyableIp";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -57,12 +58,15 @@ function VpsRow({
       <TableCell>{vps.engine ?? "—"}</TableCell>
       <TableCell>
         {/* Internal/admin-only - never show this once a customer-facing view exists */}
-        <Badge variant="secondary">{vps.sourcePlatform}</Badge>
+        <Badge variant={vps.sourcePlatform === "aws" ? "warning" : "secondary"}>
+          {vps.sourcePlatform}
+        </Badge>
       </TableCell>
       <TableCell>{vps.memLimit ? `${vps.memLimit} MB` : "—"}</TableCell>
-      <TableCell>{vps.cpuLimit || "—"}</TableCell>
+      {/* No cpuLimit (0/null) means no CPU cap was set - "∞", not "—" (missing data). */}
+      <TableCell>{vps.cpuLimit || "∞"}</TableCell>
       <TableCell className="text-muted-foreground">
-        {(vps.ipAddresses ?? []).join(", ") || "—"}
+        <IpAddressList ips={vps.ipAddresses} />
       </TableCell>
       <TableCell>
         <VpsActions
