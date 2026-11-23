@@ -15,6 +15,7 @@ import { api, type VpsInventory } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { IpAddressList } from "@/components/CopyableIp";
 import {
   Dialog,
   DialogContent,
@@ -564,7 +565,9 @@ export function VpsDetail() {
           <h2 className="text-xl font-semibold">{vps.name}</h2>
           <StateBadge state={vps.lastKnownState} task={vps.task} />
           {/* Internal/admin-only - never show this once a customer-facing view exists */}
-          <Badge variant="secondary">{vps.sourcePlatform}</Badge>
+          <Badge variant={vps.sourcePlatform === "aws" ? "warning" : "secondary"}>
+            {vps.sourcePlatform}
+          </Badge>
         </div>
         <VpsActions
           vpsId={vps.id}
@@ -590,7 +593,7 @@ export function VpsDetail() {
             <InfoRow label="Engine" value={vps.engine ?? "—"} />
             <InfoRow label="PBXware version" value={vps.pbxwareVersion ?? "—"} />
             <InfoRow label="Uptime" value={formatUptime(vps.lastUptimeSeconds)} />
-            <InfoRow label="IP addresses" value={(vps.ipAddresses ?? []).join(", ") || "—"} />
+            <InfoRow label="IP addresses" value={<IpAddressList ips={vps.ipAddresses} />} />
             <InfoRow label="UUID" value={<span className="font-mono text-xs">{vps.uuid}</span>} />
             <InfoRow label="Last synced" value={new Date(vps.lastSyncedAt).toLocaleString()} />
           </CardContent>
@@ -602,7 +605,8 @@ export function VpsDetail() {
           </CardHeader>
           <CardContent>
             <InfoRow label="Memory limit" value={vps.memLimit ? `${vps.memLimit} MB` : "—"} />
-            <InfoRow label="CPU limit" value={vps.cpuLimit ?? "—"} />
+            {/* No cpuLimit (0/null) means no CPU cap was set - "∞", not "—" (missing data). */}
+            <InfoRow label="CPU limit" value={vps.cpuLimit || "∞"} />
             <InfoRow label="CPU share" value={vps.cpuShare ?? "—"} />
             <InfoRow label="IO limit" value={vps.ioLimit ?? "—"} />
             <InfoRow label="Disk state" value={vps.diskState ?? "—"} />
